@@ -11,12 +11,12 @@ export function initLegacyRuntime() {
       __legacyRegisterServiceWorker?: (cacheName: string) => Promise<unknown>;
     };
 
-  runtimeWindow.__legacyRegisterServiceWorker = (cacheName: string) => {
+  runtimeWindow.__legacyRegisterServiceWorker = (_cacheName: string) => {
     if (!("serviceWorker" in navigator)) {
       return Promise.reject(new Error("Service workers are not supported"));
     }
 
-    const swUrl = `/legacy-sw.js?cache=${encodeURIComponent(cacheName)}`;
+    const swUrl = "/app-sw.js";
     return navigator.serviceWorker.register(swUrl);
   };
 

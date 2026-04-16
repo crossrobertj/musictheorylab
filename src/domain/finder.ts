@@ -16,6 +16,36 @@ export interface FinderScaleMatch {
   notes: string[];
 }
 
+export interface FinderAnalysis {
+  selectedNoteClasses: string[];
+  exactChords: FinderChordMatch[];
+  scaleMatches: FinderScaleMatch[];
+  compatibleScales: FinderScaleMatch[];
+}
+
+export interface FinderWorkerAnalyzeRequest {
+  type: "analyze";
+  requestId: number;
+  noteClasses: string[];
+  scaleLimit?: number;
+  compatibleLimit?: number;
+}
+
+export interface FinderWorkerResultMessage {
+  type: "result";
+  requestId: number;
+  analysis: FinderAnalysis;
+}
+
+export interface FinderWorkerErrorMessage {
+  type: "error";
+  requestId: number;
+  message: string;
+}
+
+export type FinderWorkerRequest = FinderWorkerAnalyzeRequest;
+export type FinderWorkerResponse = FinderWorkerResultMessage | FinderWorkerErrorMessage;
+
 export function getUniqueNoteClasses(notes: string[]) {
   return [...new Set(notes.map((note) => normalizeNote(note).replace(/[0-9]/g, "")))];
 }
@@ -113,4 +143,23 @@ export function getCompatibleScalesForNoteClasses(noteClasses: string[], limit =
     });
 
   return unique.slice(0, limit);
+}
+
+export function analyzeFinderSelection(
+  noteClasses: string[],
+  options?: {
+    scaleLimit?: number;
+    compatibleLimit?: number;
+  },
+): FinderAnalysis {
+  const selectedNoteClasses = getUniqueNoteClasses(noteClasses);
+  return {
+    selectedNoteClasses,
+    exactChords: findExactChordMatches(selectedNoteClasses),
+    scaleMatches: findMatchingScales(selectedNoteClasses).slice(0, options?.scaleLimit ?? 12),
+    compatibleScales: getCompatibleScalesForNoteClasses(
+      selectedNoteClasses,
+      options?.compatibleLimit ?? 10,
+    ),
+  };
 }

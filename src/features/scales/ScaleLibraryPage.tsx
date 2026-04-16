@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { playScale } from "../../audio/audioEngine";
+import { FavoriteToggleButton } from "../../components/FavoriteToggleButton";
 import { NoteBadgeList } from "../../components/NoteBadgeList";
 import { KeyboardPreview } from "../../components/KeyboardPreview";
 import { useAppStore } from "../../app/store/useAppStore";
@@ -42,6 +43,16 @@ export function ScaleLibraryPage({ variant }: ScaleLibraryPageProps) {
 
   const selectedScale = ALL_SCALES[selectedScaleName];
   const previewNotes = getScalePreview(selectedScaleName, currentKey);
+  const selectedFavorite = {
+    type: "scale" as const,
+    name: `${currentKey.split(" ")[0]} ${selectedScaleName}`,
+    keySignature: currentKey,
+    notes: previewNotes,
+    route: variant === "modes" ? "/app/modes" : "/app/world",
+    desc: selectedScale.desc,
+    family: selectedScaleName,
+    region: selectedScale.region,
+  };
 
   return (
     <section className="page-section">
@@ -74,9 +85,12 @@ export function ScaleLibraryPage({ variant }: ScaleLibraryPageProps) {
             </h2>
             <p>{selectedScale.desc}</p>
           </div>
-          <button className="primary-button" onClick={() => playScale(previewNotes)}>
-            Play Scale
-          </button>
+          <div className="toolbar-cluster">
+            <FavoriteToggleButton item={selectedFavorite} />
+            <button className="primary-button" onClick={() => playScale(previewNotes)}>
+              Play Scale
+            </button>
+          </div>
         </div>
         <div className="detail-meta">
           <span className="info-chip">Region: {selectedScale.region}</span>
@@ -89,6 +103,17 @@ export function ScaleLibraryPage({ variant }: ScaleLibraryPageProps) {
       <div className="feature-grid">
         {scales.map(([scaleName, scale]) => {
           const typedScaleName = scaleName as keyof typeof ALL_SCALES;
+          const scaleNotes = getScalePreview(typedScaleName, currentKey);
+          const favoriteItem = {
+            type: "scale" as const,
+            name: `${currentKey.split(" ")[0]} ${scaleName}`,
+            keySignature: currentKey,
+            notes: scaleNotes,
+            route: variant === "modes" ? "/app/modes" : "/app/world",
+            desc: scale.desc,
+            family: scaleName,
+            region: scale.region,
+          };
           return (
             <article
               key={scaleName}
@@ -99,15 +124,18 @@ export function ScaleLibraryPage({ variant }: ScaleLibraryPageProps) {
                   <span className="card-tag">{scale.region}</span>
                   <h3>{scaleName}</h3>
                 </div>
-                <button
-                  className="ghost-button"
-                  onClick={() => {
-                    setSelectedScaleName(typedScaleName);
-                    playScale(getScalePreview(typedScaleName, currentKey));
-                  }}
-                >
-                  Preview
-                </button>
+                <div className="toolbar-cluster">
+                  <FavoriteToggleButton item={favoriteItem} />
+                  <button
+                    className="ghost-button"
+                    onClick={() => {
+                      setSelectedScaleName(typedScaleName);
+                      playScale(scaleNotes);
+                    }}
+                  >
+                    Preview
+                  </button>
+                </div>
               </div>
               <p className="card-copy">{scale.desc}</p>
               <div className="info-chip-row">

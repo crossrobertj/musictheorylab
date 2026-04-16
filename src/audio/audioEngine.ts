@@ -1,5 +1,6 @@
 import { useAppStore } from "../app/store/useAppStore";
-import { getFrequency } from "../domain/music";
+import { useTuningStore } from "../app/store/useTuningStore";
+import { getTunedFrequency } from "../domain/tuning";
 
 let audioContext: AudioContext | null = null;
 const pendingTimeouts = new Set<number>();
@@ -73,6 +74,7 @@ export function stopAllAudio() {
 
 export function playNote(note: string, duration = 650) {
   const { soundEnabled, currentInstrument } = useAppStore.getState();
+  const { system, basePitch } = useTuningStore.getState();
   if (!soundEnabled) return;
 
   const ctx = getAudioContext();
@@ -86,7 +88,7 @@ export function playNote(note: string, duration = 650) {
   const filter = ctx.createBiquadFilter();
 
   oscillator.type = getWaveType(currentInstrument);
-  oscillator.frequency.value = getFrequency(note);
+  oscillator.frequency.value = getTunedFrequency(note, system, basePitch);
   filter.type = "lowpass";
   filter.frequency.setValueAtTime(2600, now);
   filter.frequency.exponentialRampToValueAtTime(480, now + duration / 1000);

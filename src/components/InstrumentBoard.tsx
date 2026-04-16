@@ -1,9 +1,10 @@
 import { playNote } from "../audio/audioEngine";
-import { INSTRUMENT_CONFIGS } from "../domain/generated/theory-data";
+import { useCustomInstrumentStore } from "../app/store/useCustomInstrumentStore";
+import { getInstrumentConfig } from "../domain/instruments";
 import { formatNoteClass, getNoteAtFret, getNoteClass } from "../domain/music";
 
 interface InstrumentBoardProps {
-  instrumentId: keyof typeof INSTRUMENT_CONFIGS;
+  instrumentId: string;
   activeNotes: string[];
   keySignature: string;
   onNoteClick?: (note: string) => void;
@@ -82,7 +83,8 @@ function FretboardBoard({
   keySignature,
   onNoteClick,
 }: InstrumentBoardProps) {
-  const config = INSTRUMENT_CONFIGS[instrumentId];
+  const customInstruments = useCustomInstrumentStore((state) => state.customInstruments);
+  const config = getInstrumentConfig(instrumentId, customInstruments);
   if (config.type !== "fretboard") return null;
 
   const displayFrets = Math.min(config.frets, 15);
@@ -126,7 +128,8 @@ function FretboardBoard({
 }
 
 export function InstrumentBoard(props: InstrumentBoardProps) {
-  const config = INSTRUMENT_CONFIGS[props.instrumentId];
+  const customInstruments = useCustomInstrumentStore((state) => state.customInstruments);
+  const config = getInstrumentConfig(props.instrumentId, customInstruments);
 
   if (config.type === "piano") {
     return (

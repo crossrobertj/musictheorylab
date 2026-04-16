@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { playProgression } from "../../audio/audioEngine";
+import { FavoriteToggleButton } from "../../components/FavoriteToggleButton";
 import { NoteBadgeList } from "../../components/NoteBadgeList";
 import { useAppStore } from "../../app/store/useAppStore";
 import { PROGRESSIONS } from "../../domain/generated/theory-data";
@@ -33,6 +34,16 @@ export function ProgressionsPage() {
   const selectedProgression =
     PROGRESSIONS.find((progression) => progression.name === selectedProgressionName) ||
     PROGRESSIONS[0];
+  const selectedFavorite = {
+    type: "progression" as const,
+    name: selectedProgression.name,
+    keySignature: currentKey,
+    chords: resolvedChords.map((chord) => chord.notes),
+    numerals: [...selectedProgression.numerals],
+    route: "/app/progressions",
+    desc: selectedProgression.desc,
+    style: selectedProgression.style,
+  };
 
   return (
     <section className="page-section">
@@ -75,12 +86,15 @@ export function ProgressionsPage() {
             <h2>{selectedProgression.name}</h2>
             <p>{selectedProgression.desc}</p>
           </div>
-          <button
-            className="primary-button"
-            onClick={() => playProgression(resolvedChords.map((chord) => chord.notes))}
-          >
-            Play Progression
-          </button>
+          <div className="toolbar-cluster">
+            <FavoriteToggleButton item={selectedFavorite} />
+            <button
+              className="primary-button"
+              onClick={() => playProgression(resolvedChords.map((chord) => chord.notes))}
+            >
+              Play Progression
+            </button>
+          </div>
         </div>
         <div className="progression-strip">
           {selectedProgression.numerals.map((numeral, index) => (
@@ -94,40 +108,55 @@ export function ProgressionsPage() {
       </article>
 
       <div className="feature-grid">
-        {filteredProgressions.map((progression) => (
-          <article
-            key={progression.name}
-            className={`feature-card ${
-              progression.name === selectedProgressionName ? "is-selected" : ""
-            }`}
-          >
-            <div className="feature-card-header">
-              <div>
-                <span className="card-tag">{progression.style}</span>
-                <h3>{progression.name}</h3>
+        {filteredProgressions.map((progression) => {
+          const resolved = getProgressionPreview(progression.name, currentKey);
+          const favoriteItem = {
+            type: "progression" as const,
+            name: progression.name,
+            keySignature: currentKey,
+            chords: resolved.map((chord) => chord.notes),
+            numerals: [...progression.numerals],
+            route: "/app/progressions",
+            desc: progression.desc,
+            style: progression.style,
+          };
+
+          return (
+            <article
+              key={progression.name}
+              className={`feature-card ${
+                progression.name === selectedProgressionName ? "is-selected" : ""
+              }`}
+            >
+              <div className="feature-card-header">
+                <div>
+                  <span className="card-tag">{progression.style}</span>
+                  <h3>{progression.name}</h3>
+                </div>
+                <div className="toolbar-cluster">
+                  <FavoriteToggleButton item={favoriteItem} />
+                  <button
+                    className="ghost-button"
+                    onClick={() => {
+                      setSelectedProgressionName(progression.name);
+                      playProgression(resolved.map((chord) => chord.notes));
+                    }}
+                  >
+                    Preview
+                  </button>
+                </div>
               </div>
-              <button
-                className="ghost-button"
-                onClick={() => {
-                  setSelectedProgressionName(progression.name);
-                  playProgression(
-                    getProgressionPreview(progression.name, currentKey).map((chord) => chord.notes),
-                  );
-                }}
-              >
-                Preview
-              </button>
-            </div>
-            <p className="card-copy">{progression.desc}</p>
-            <div className="scale-strip">
-              {progression.numerals.map((numeral) => (
-                <span key={`${progression.name}-${numeral}`} className="scale-token">
-                  {numeral}
-                </span>
-              ))}
-            </div>
-          </article>
-        ))}
+              <p className="card-copy">{progression.desc}</p>
+              <div className="scale-strip">
+                {progression.numerals.map((numeral) => (
+                  <span key={`${progression.name}-${numeral}`} className="scale-token">
+                    {numeral}
+                  </span>
+                ))}
+              </div>
+            </article>
+          );
+        })}
       </div>
     </section>
   );

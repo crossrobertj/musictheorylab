@@ -17,16 +17,31 @@ function mustMatch(input, regex, label) {
 
 function extractAssignedLiteral(input, constantName) {
   const marker = `const ${constantName} = `;
-  const markerIndex = input.indexOf(marker);
+  return extractLiteralAfterMarker(input, marker, `constant ${constantName}`);
+}
+
+function extractLiteralAfterMarker(input, marker, label) {
+  return extractLiteralAfterMarkerIndex(input, input.indexOf(marker), marker, label);
+}
+
+function extractLiteralAfterLastMarker(input, marker, label) {
+  return extractLiteralAfterMarkerIndex(input, input.lastIndexOf(marker), marker, label);
+}
+
+function extractLiteralAfterMarkerIndex(input, markerIndex, marker, label) {
   if (markerIndex === -1) {
-    throw new Error(`Could not find constant ${constantName}`);
+    throw new Error(`Could not find ${label}`);
   }
 
-  const start = markerIndex + marker.length;
+  let start = markerIndex + marker.length;
+  while (/\s/.test(input[start] ?? "")) {
+    start += 1;
+  }
+
   const opening = input[start];
   const closing = opening === "{" ? "}" : opening === "[" ? "]" : null;
   if (!closing) {
-    throw new Error(`Constant ${constantName} does not start with an object or array`);
+    throw new Error(`${label} does not start with an object or array`);
   }
 
   let depth = 0;
@@ -94,7 +109,7 @@ function extractAssignedLiteral(input, constantName) {
     }
   }
 
-  throw new Error(`Could not extract full literal for ${constantName}`);
+  throw new Error(`Could not extract full literal for ${label}`);
 }
 
 function evaluateLiteral(literal) {
@@ -168,6 +183,9 @@ const chordTemplates = evaluateLiteral(
   extractAssignedLiteral(html, "CHORD_TEMPLATES"),
 );
 const progressions = evaluateLiteral(extractAssignedLiteral(html, "PROGRESSIONS"));
+const genreLibrary = evaluateLiteral(
+  extractLiteralAfterLastMarker(html, "_GENRE_LIBRARY = ", "genre library"),
+);
 
 const legacyHashCaptureScript = `
 <script>
@@ -233,6 +251,7 @@ await fs.writeFile(
     `export const ALL_SCALES = ${JSON.stringify(allScales, null, 2)} as const;`,
     `export const CHORD_TEMPLATES = ${JSON.stringify(chordTemplates, null, 2)} as const;`,
     `export const PROGRESSIONS = ${JSON.stringify(progressions, null, 2)} as const;`,
+    `export const GENRE_LIBRARY = ${JSON.stringify(genreLibrary, null, 2)} as const;`,
     "",
   ].join("\n\n"),
 );

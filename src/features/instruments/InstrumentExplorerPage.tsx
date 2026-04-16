@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
 import { playChord, playScale } from "../../audio/audioEngine";
 import { useAppStore } from "../../app/store/useAppStore";
+import { useCustomInstrumentStore } from "../../app/store/useCustomInstrumentStore";
 import { InstrumentBoard } from "../../components/InstrumentBoard";
 import { NoteBadgeList } from "../../components/NoteBadgeList";
-import { INSTRUMENT_CONFIGS } from "../../domain/generated/theory-data";
+import { getInstrumentConfig } from "../../domain/instruments";
 import { NOTES } from "../../domain/music";
 import {
   buildChordFromRootAndQuality,
@@ -31,6 +32,7 @@ function toggleNote(target: string, current: string[]) {
 export function InstrumentExplorerPage() {
   const currentKey = useAppStore((state) => state.currentKey);
   const currentInstrument = useAppStore((state) => state.currentInstrument);
+  const customInstruments = useCustomInstrumentStore((state) => state.customInstruments);
   const [mode, setMode] = useState<InstrumentMode>("scale");
   const [customNotes, setCustomNotes] = useState<string[]>(["C", "E", "G"]);
 
@@ -51,6 +53,7 @@ export function InstrumentExplorerPage() {
   }, [currentKey, customNotes, mode]);
 
   const root = getRootFromKey(currentKey);
+  const currentInstrumentConfig = getInstrumentConfig(currentInstrument, customInstruments);
   const tonicTriad = useMemo(() => buildChordFromRootAndQuality(`${root}4`, "Major"), [root]);
   const tonicMinorTriad = useMemo(() => buildChordFromRootAndQuality(`${root}4`, "minor"), [root]);
 
@@ -94,7 +97,7 @@ export function InstrumentExplorerPage() {
 
         <article className="summary-card">
           <span className="summary-label">Instrument</span>
-          <h2>{currentInstrument}</h2>
+          <h2>{currentInstrumentConfig.name}</h2>
           <p>The board below follows the app-level instrument selector in the source toolbar.</p>
           <NoteBadgeList notes={activeNotes} keySignature={currentKey} />
         </article>
@@ -150,14 +153,14 @@ export function InstrumentExplorerPage() {
           <div>
             <span className="summary-label">Interactive Board</span>
             <h2>
-              {MODE_LABELS[mode]} on {currentInstrument}
+              {MODE_LABELS[mode]} on {currentInstrumentConfig.name}
             </h2>
             <p>Click any note on the board to audition it. In custom mode, clicks also toggle note membership.</p>
           </div>
           <NoteBadgeList notes={activeNotes} keySignature={currentKey} />
         </div>
         <InstrumentBoard
-          instrumentId={currentInstrument as keyof typeof INSTRUMENT_CONFIGS}
+          instrumentId={currentInstrument}
           activeNotes={activeNotes}
           keySignature={currentKey}
           onNoteClick={

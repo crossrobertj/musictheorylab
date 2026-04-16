@@ -14,42 +14,50 @@
 - `All Chord Types`
 - `Circle of Fifths`
 - `Interval Calculator`
+- `Modal Interchange`
+- `Chord Analyzer`
+- `Advanced Harmony`
+- `Modulation Lab`
 - `Key Distance`
 - `Instrument View`
 - `Chord Voicings`
 - `Metronome`
 - `Drum Machine`
+- `Rhythmic Lab`
 - `Ear Trainer`
 - `Quiz`
+- `Learning Paths`
+- `Theory Guide`
+- `Grimoire`
+- `Favorites`
 - `Western & Blues`
 - `World Scales`
 - `Progressions`
 - `Chord/Scale Finder`
-
-## In progress
-
-- `Theory Guide`
-  Best next learning target now that both ear training and quiz flows are source-side.
-
-## Still missing from the source app
-
-- `Modal Interchange`
 - `Genre Explorer`
 - `Mood Picker`
-- `Theory Guide`
-- `Favorites`
 - `Scale Builder`
-- `Chord Analyzer`
-- `Grimoire`
-- `Songwriting / studio / phrasing tools`
-- `Microtonal and historical tuning UI`
+- `Phrasing Tool`
+- `Progression Studio`
+- `Songwriting Lab`
+- `Notation Writer`
+- `Tablature Tool`
+- `Microtonal Lab`
+- `Custom Tuning`
+- `Mixing Guide`
+- `Recording Guide`
 
-## Shared infrastructure still missing
+## Remaining legacy-only surfaces
 
-- Source-side worker for heavy chord/scale matching.
-- Source-side persistence migration from legacy localStorage keys.
-- Source-side service worker and offline strategy for the React app itself.
-- Source-side tests for theory helpers and feature routes beyond smoke coverage.
+- No major feature routes remain legacy-only.
+- `legacy.html` is retained as a reference build and compatibility fallback while the source app gains deeper tests, worker extraction, and offline support.
+
+## Verification status
+
+- Coverage reporting is wired through `npm run test:coverage`.
+- Current automated coverage is `80.72%` statements, `63.67%` branches, `76.79%` functions, and `83.41%` lines.
+- Current automated coverage includes domain helpers, finder analysis, versioned persistence, route rendering, store behavior, learning-path state, finder page state, songwriting flows, metronome and drum-machine state, service-worker registration, offline reload recovery, and browser smoke.
+- Broader feature coverage is still useful, but the test suite is now materially beyond the earlier targeted baseline.
 
 ## Migration rule
 

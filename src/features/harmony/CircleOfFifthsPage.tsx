@@ -3,7 +3,8 @@ import { playChord } from "../../audio/audioEngine";
 import { InstrumentBoard } from "../../components/InstrumentBoard";
 import { NoteBadgeList } from "../../components/NoteBadgeList";
 import { useAppStore } from "../../app/store/useAppStore";
-import { INSTRUMENT_CONFIGS } from "../../domain/generated/theory-data";
+import { useCustomInstrumentStore } from "../../app/store/useCustomInstrumentStore";
+import { getInstrumentConfig } from "../../domain/instruments";
 import {
   CIRCLE_MAJOR_KEYS,
   CIRCLE_MINOR_KEYS,
@@ -54,6 +55,7 @@ function CircleNode({ label, active, onClick, x, y, kind }: CircleNodeProps) {
 export function CircleOfFifthsPage() {
   const currentKey = useAppStore((state) => state.currentKey);
   const currentInstrument = useAppStore((state) => state.currentInstrument);
+  const customInstruments = useCustomInstrumentStore((state) => state.customInstruments);
   const setCurrentKey = useAppStore((state) => state.setCurrentKey);
 
   const currentScale = useMemo(() => getScaleNotes(currentKey), [currentKey]);
@@ -62,6 +64,7 @@ export function CircleOfFifthsPage() {
   const parallelKey = useMemo(() => getParallelKey(currentKey), [currentKey]);
   const neighbors = useMemo(() => getCircleNeighbors(currentKey), [currentKey]);
   const relativeDistance = useMemo(() => calculateKeyDistance(currentKey, relativeKey), [currentKey, relativeKey]);
+  const currentInstrumentConfig = getInstrumentConfig(currentInstrument, customInstruments);
 
   return (
     <section className="page-section">
@@ -187,13 +190,13 @@ export function CircleOfFifthsPage() {
         <div className="detail-header">
           <div>
             <span className="summary-label">Instrument Context</span>
-            <h2>{currentInstrument}</h2>
+            <h2>{currentInstrumentConfig.name}</h2>
             <p>The instrument layer now works with circle-of-fifths selections too.</p>
           </div>
           <NoteBadgeList notes={currentScale} keySignature={currentKey} />
         </div>
         <InstrumentBoard
-          instrumentId={currentInstrument as keyof typeof INSTRUMENT_CONFIGS}
+          instrumentId={currentInstrument}
           activeNotes={currentScale}
           keySignature={currentKey}
         />

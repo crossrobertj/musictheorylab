@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { playChord } from "../../audio/audioEngine";
+import { FavoriteToggleButton } from "../../components/FavoriteToggleButton";
 import { NoteBadgeList } from "../../components/NoteBadgeList";
 import { KeyboardPreview } from "../../components/KeyboardPreview";
 import { useAppStore } from "../../app/store/useAppStore";
@@ -31,6 +32,15 @@ export function ChordLibraryPage() {
 
   const selectedChord = buildChordFromRootAndQuality(`${root}4`, selectedQuality);
   const selectedTemplate = CHORD_TEMPLATES[selectedQuality];
+  const selectedFavorite = {
+    type: "chord" as const,
+    name: selectedChord.name,
+    keySignature: currentKey,
+    notes: selectedChord.notes,
+    route: "/app/allchords",
+    desc: selectedTemplate.desc,
+    family: selectedQuality,
+  };
 
   return (
     <section className="page-section">
@@ -61,9 +71,12 @@ export function ChordLibraryPage() {
             <h2>{selectedChord.name}</h2>
             <p>{selectedTemplate.desc}</p>
           </div>
-          <button className="primary-button" onClick={() => playChord(selectedChord.notes)}>
-            Play Chord
-          </button>
+          <div className="toolbar-cluster">
+            <FavoriteToggleButton item={selectedFavorite} />
+            <button className="primary-button" onClick={() => playChord(selectedChord.notes)}>
+              Play Chord
+            </button>
+          </div>
         </div>
         <div className="detail-meta">
           <span className="info-chip">Intervals: {formatIntervals(selectedTemplate.intervals)}</span>
@@ -78,6 +91,15 @@ export function ChordLibraryPage() {
         {templates.map(([quality, template]) => {
           const typedQuality = quality as keyof typeof CHORD_TEMPLATES;
           const preview = buildChordFromRootAndQuality(`${root}4`, typedQuality);
+          const favoriteItem = {
+            type: "chord" as const,
+            name: preview.name,
+            keySignature: currentKey,
+            notes: preview.notes,
+            route: "/app/allchords",
+            desc: template.desc,
+            family: quality,
+          };
           return (
             <article
               key={quality}
@@ -88,15 +110,18 @@ export function ChordLibraryPage() {
                   <span className="card-tag">{template.symbol || "triad"}</span>
                   <h3>{quality}</h3>
                 </div>
-                <button
-                  className="ghost-button"
-                  onClick={() => {
-                    setSelectedQuality(typedQuality);
-                    playChord(preview.notes);
-                  }}
-                >
-                  Preview
-                </button>
+                <div className="toolbar-cluster">
+                  <FavoriteToggleButton item={favoriteItem} />
+                  <button
+                    className="ghost-button"
+                    onClick={() => {
+                      setSelectedQuality(typedQuality);
+                      playChord(preview.notes);
+                    }}
+                  >
+                    Preview
+                  </button>
+                </div>
               </div>
               <p className="card-copy">{template.desc}</p>
               <div className="info-chip-row">

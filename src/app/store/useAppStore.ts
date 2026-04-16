@@ -1,8 +1,10 @@
 import { create } from "zustand";
+import { loadVersionedState, persistVersionedState } from "../persistence/storage";
 
 export type AppTheme = "dark" | "light";
 
 const STORAGE_KEY = "music-theory-lab-source-state-v1";
+const STORAGE_VERSION = 1;
 
 interface PersistedAppState {
   currentView: string;
@@ -31,29 +33,38 @@ const defaultState: PersistedAppState = {
   theme: "dark",
 };
 
-function loadPersistedState(): PersistedAppState {
-  if (typeof window === "undefined") return defaultState;
+function parsePersistedAppState(value: unknown): PersistedAppState | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Partial<PersistedAppState>;
 
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return defaultState;
-    return { ...defaultState, ...(JSON.parse(raw) as Partial<PersistedAppState>) };
-  } catch {
-    return defaultState;
-  }
+  return {
+    currentView:
+      typeof candidate.currentView === "string" ? candidate.currentView : defaultState.currentView,
+    currentKey:
+      typeof candidate.currentKey === "string" ? candidate.currentKey : defaultState.currentKey,
+    currentInstrument:
+      typeof candidate.currentInstrument === "string"
+        ? candidate.currentInstrument
+        : defaultState.currentInstrument,
+    tempo: typeof candidate.tempo === "number" ? candidate.tempo : defaultState.tempo,
+    soundEnabled:
+      typeof candidate.soundEnabled === "boolean"
+        ? candidate.soundEnabled
+        : defaultState.soundEnabled,
+    theme: candidate.theme === "light" || candidate.theme === "dark" ? candidate.theme : defaultState.theme,
+  };
 }
 
 function persistState(state: PersistedAppState) {
-  if (typeof window === "undefined") return;
-
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch {
-    // Ignore storage failures and keep the app interactive.
-  }
+  persistVersionedState(STORAGE_KEY, STORAGE_VERSION, state);
 }
 
-const initialState = loadPersistedState();
+const initialState = loadVersionedState({
+  key: STORAGE_KEY,
+  version: STORAGE_VERSION,
+  defaultValue: defaultState,
+  parse: parsePersistedAppState,
+});
 
 export const useAppStore = create<AppState>((set, get) => ({
   ...initialState,

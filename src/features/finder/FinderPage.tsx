@@ -3,15 +3,9 @@ import { playChord, playScale } from "../../audio/audioEngine";
 import { KeyboardPreview } from "../../components/KeyboardPreview";
 import { NoteBadgeList } from "../../components/NoteBadgeList";
 import { useAppStore } from "../../app/store/useAppStore";
-import {
-  FinderChordMatch,
-  FinderScaleMatch,
-  findExactChordMatches,
-  findMatchingScales,
-  getCompatibleScalesForNoteClasses,
-  getUniqueNoteClasses,
-} from "../../domain/finder";
+import { FinderChordMatch, FinderScaleMatch } from "../../domain/finder";
 import { NOTES } from "../../domain/music";
+import { useFinderAnalysis } from "./useFinderAnalysis";
 
 function toggleNote(target: string, current: string[]) {
   return current.includes(target)
@@ -31,21 +25,10 @@ export function FinderPage() {
   const currentKey = useAppStore((state) => state.currentKey);
   const [selectedNotes, setSelectedNotes] = useState<string[]>(["C", "E", "G"]);
 
-  const selectedNoteClasses = useMemo(() => getUniqueNoteClasses(selectedNotes), [selectedNotes]);
+  const { analysis, isLoading, engine, error } = useFinderAnalysis(selectedNotes);
+  const { selectedNoteClasses, exactChords, scaleMatches, compatibleScales } = analysis;
   const selectedNotePreviews = useMemo(
     () => selectedNoteClasses.map((noteClass) => `${noteClass}4`),
-    [selectedNoteClasses],
-  );
-  const exactChords = useMemo(
-    () => findExactChordMatches(selectedNoteClasses),
-    [selectedNoteClasses],
-  );
-  const scaleMatches = useMemo(
-    () => findMatchingScales(selectedNoteClasses).slice(0, 12),
-    [selectedNoteClasses],
-  );
-  const compatibleScales = useMemo(
-    () => getCompatibleScalesForNoteClasses(selectedNoteClasses, 10),
     [selectedNoteClasses],
   );
 
@@ -56,9 +39,9 @@ export function FinderPage() {
           <span className="eyebrow">Source Feature</span>
           <h1>Chord/Scale Finder</h1>
           <p>
-            This finder now runs from source-side matching helpers extracted from the legacy logic.
-            Select pitch classes, then inspect exact chord matches, potential scale matches, and
-            broader compatible scales.
+            This finder now pushes heavy matching work into a source-side Web Worker. Select pitch
+            classes, then inspect exact chord matches, potential scale matches, and broader
+            compatible scales without blocking the main UI thread.
           </p>
         </div>
         <div className="hero-actions">
@@ -85,6 +68,9 @@ export function FinderPage() {
             <span className="info-chip">Exact chords: {exactChords.length}</span>
             <span className="info-chip">Scale matches: {scaleMatches.length}</span>
             <span className="info-chip">Compatible scales: {compatibleScales.length}</span>
+            <span className={`info-chip ${engine === "worker" ? "" : "is-warn"}`}>
+              {isLoading ? "Matching…" : engine === "worker" ? "Worker" : "Main Thread"}
+            </span>
           </div>
         </div>
 
@@ -105,6 +91,7 @@ export function FinderPage() {
 
         <NoteBadgeList notes={selectedNotePreviews} keySignature={currentKey} />
         <KeyboardPreview activeNotes={selectedNotePreviews} keySignature={currentKey} />
+        {error ? <p className="card-copy">{error}</p> : null}
       </article>
 
       <div className="summary-grid finder-grid">

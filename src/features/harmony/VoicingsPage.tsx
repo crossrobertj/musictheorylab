@@ -4,7 +4,8 @@ import { useAppStore } from "../../app/store/useAppStore";
 import { InstrumentBoard } from "../../components/InstrumentBoard";
 import { KeyboardPreview } from "../../components/KeyboardPreview";
 import { NoteBadgeList } from "../../components/NoteBadgeList";
-import { INSTRUMENT_CONFIGS } from "../../domain/generated/theory-data";
+import { useCustomInstrumentStore } from "../../app/store/useCustomInstrumentStore";
+import { getInstrumentConfig } from "../../domain/instruments";
 import {
   CHORD_TEMPLATES,
   formatIntervals,
@@ -29,6 +30,7 @@ function getRegisterSpans(notes: string[]) {
 export function VoicingsPage() {
   const currentKey = useAppStore((state) => state.currentKey);
   const currentInstrument = useAppStore((state) => state.currentInstrument);
+  const customInstruments = useCustomInstrumentStore((state) => state.customInstruments);
   const root = getRootFromKey(currentKey);
   const [selectedQuality, setSelectedQuality] =
     useState<(typeof VOICING_QUALITIES)[number]>("maj7");
@@ -65,6 +67,7 @@ export function VoicingsPage() {
     ];
     return [...new Set(suggestions)];
   }, [currentKey, root]);
+  const currentInstrumentConfig = getInstrumentConfig(currentInstrument, customInstruments);
 
   return (
     <section className="page-section">
@@ -199,7 +202,7 @@ export function VoicingsPage() {
               <NoteBadgeList notes={selectedVariation.notes} keySignature={currentKey} />
               <KeyboardPreview activeNotes={selectedVariation.notes} keySignature={currentKey} />
               <InstrumentBoard
-                instrumentId={currentInstrument as keyof typeof INSTRUMENT_CONFIGS}
+                instrumentId={currentInstrument}
                 activeNotes={selectedVariation.notes}
                 keySignature={currentKey}
               />
@@ -239,6 +242,7 @@ export function VoicingsPage() {
               </button>
             ))}
           </div>
+          <p className="supporting-copy">Instrument preview: {currentInstrumentConfig.name}</p>
         </article>
       </div>
     </section>
