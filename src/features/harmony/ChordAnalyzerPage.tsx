@@ -1,12 +1,15 @@
-import { useMemo, useState } from "react";
-import { playChord, playScale } from "../../audio/audioEngine";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { playChord } from "../../audio/audioEngine";
+import { useShellBridgeStore } from "../../app/store/useShellBridgeStore";
 import { FavoriteToggleButton } from "../../components/FavoriteToggleButton";
+import { ChordInversionsPanel, CompatibleScalesPanel } from "../../components/HarmonyPanels";
 import { KeyboardPreview } from "../../components/KeyboardPreview";
 import { NoteBadgeList } from "../../components/NoteBadgeList";
 import { useAppStore } from "../../app/store/useAppStore";
 import { buildChordAnalysis, suggestRomanNumeral } from "../../domain/chordAnalyzer";
 
 export function ChordAnalyzerPage() {
+  const updateRoute = useShellBridgeStore((state) => state.updateRoute);
   const currentKey = useAppStore((state) => state.currentKey);
   const [input, setInput] = useState("Cmaj7");
   const [submittedInput, setSubmittedInput] = useState("Cmaj7");
@@ -16,23 +19,51 @@ export function ChordAnalyzerPage() {
     () => (analysis ? suggestRomanNumeral(analysis.root, currentKey) : null),
     [analysis, currentKey],
   );
+  const playableLabel = analysis
+    ? `${analysis.raw} • ${analysis.notes.length} notes`
+    : `Invalid chord: ${submittedInput || "—"}`;
+  const playableNoteSet = analysis?.notes ?? [];
 
-  function handleAnalyze() {
+  const handleAnalyze = useCallback(() => {
     setSubmittedInput(input.trim());
-  }
+  }, [input]);
+
+  const playCurrent = useCallback(() => {
+    if (!analysis) return;
+    void playChord(analysis.notes);
+  }, [analysis]);
+
+  const clear = useCallback(() => {
+    setInput("Cmaj7");
+    setSubmittedInput("Cmaj7");
+  }, []);
+
+  const shellPlayCurrent = analysis ? playCurrent : null;
+
+  useEffect(() => {
+    updateRoute("chordanalyzer", {
+      title: "Chord Analyzer",
+      subtitle: "Chord symbol analysis, inversions, and scale fits.",
+      playableLabel,
+      playableNoteSet,
+      playCurrent: shellPlayCurrent,
+      clear,
+    });
+  }, [clear, playableLabel, playableNoteSet, shellPlayCurrent, updateRoute]);
 
   return (
     <section className="page-section">
-      <div className="page-hero">
-        <div>
-          <span className="eyebrow">Source Feature</span>
-          <h1>Chord Analyzer</h1>
-          <p>
-            Type a chord symbol and inspect its source-side construction, inversion set, compatible
-            scales, and rough Roman-numeral role in the active key.
-          </p>
-        </div>
-        <div className="hero-actions">
+      <div className="legacy-tool-panel">
+        <div className="legacy-tool-panel__header">
+          <div>
+            <span className="eyebrow">Analysis Tool</span>
+            <h1 className="legacy-tool-panel__title">Chord Analyzer</h1>
+            <p className="legacy-tool-panel__copy">
+              Type a chord symbol and inspect its construction, inversion set, compatible scales,
+              and rough Roman-numeral role in the active key.
+            </p>
+          </div>
+          <div className="hero-actions">
           <label className="search-field scale-builder-name-field">
             <span>Chord Symbol</span>
             <input
@@ -48,25 +79,26 @@ export function ChordAnalyzerPage() {
           <button className="primary-button" onClick={handleAnalyze}>
             Analyze
           </button>
+          </div>
         </div>
       </div>
 
       {!analysis ? (
-        <article className="detail-card">
+        <article className="legacy-preview-panel">
           <span className="summary-label">Invalid Chord</span>
           <h2>Use a root plus a supported quality</h2>
-          <p>
+          <p className="legacy-tool-panel__copy">
             Examples: `Cmaj7`, `Dm7`, `G7#9`, `Bbadd9`, `F#m7b5`, `Asus4`.
           </p>
         </article>
       ) : (
         <>
-          <article className="detail-card">
-            <div className="detail-header">
+          <article className="legacy-preview-panel">
+            <div className="legacy-tool-panel__header">
               <div>
                 <span className="summary-label">Current Analysis</span>
                 <h2>{analysis.raw}</h2>
-                <p>{analysis.construction}</p>
+                <p className="legacy-tool-panel__copy">{analysis.construction}</p>
               </div>
               <div className="toolbar-cluster">
                 <FavoriteToggleButton
@@ -80,24 +112,24 @@ export function ChordAnalyzerPage() {
                     family: analysis.qualityKey,
                   }}
                 />
-                <button className="primary-button" onClick={() => playChord(analysis.notes)}>
+                <button className="primary-button" onClick={playCurrent}>
                   Play Chord
                 </button>
               </div>
             </div>
 
-            <div className="detail-meta">
-              <span className="info-chip">Quality: {analysis.qualityKey}</span>
-              <span className="info-chip">Notes: {analysis.notes.length}</span>
-              <span className="info-chip">Key Context: {currentKey}</span>
+            <div className="legacy-preview-panel__meta">
+              <span className="legacy-preview-chip">Quality: {analysis.qualityKey}</span>
+              <span className="legacy-preview-chip">Notes: {analysis.notes.length}</span>
+              <span className="legacy-preview-chip">Key Context: {currentKey}</span>
             </div>
 
-            <div className="feature-grid">
+            <div className="legacy-catalog-grid">
               {analysis.notes.map((note, index) => (
-                <article className="feature-card" key={`${note}-${analysis.intervalLabels[index]}`}>
-                  <span className="card-tag">{analysis.intervalLabels[index]}</span>
-                  <h3>{analysis.noteClasses[index]}</h3>
-                  <p className="card-copy">{note}</p>
+                <article className="legacy-catalog-card" key={`${note}-${analysis.intervalLabels[index]}`}>
+                  <span className="legacy-catalog-card__eyebrow">{analysis.intervalLabels[index]}</span>
+                  <h3 className="legacy-catalog-card__title">{analysis.noteClasses[index]}</h3>
+                  <p className="legacy-catalog-card__subtitle">{note}</p>
                 </article>
               ))}
             </div>
@@ -106,18 +138,18 @@ export function ChordAnalyzerPage() {
             <KeyboardPreview activeNotes={analysis.notes} keySignature={currentKey} />
           </article>
 
-          <div className="summary-grid">
-            <article className="summary-card">
+          <div className="legacy-catalog-grid">
+            <article className="legacy-catalog-card">
               <span className="summary-label">Roman Numeral</span>
               <h2>{roman?.label ?? "Unknown"}</h2>
               <p>{roman?.detail ?? "No harmonic role available."}</p>
             </article>
-            <article className="summary-card">
+            <article className="legacy-catalog-card">
               <span className="summary-label">Inversions</span>
               <h2>{analysis.inversions.length}</h2>
               <p>Every inversion is generated from the same source note set and kept playable.</p>
             </article>
-            <article className="summary-card">
+            <article className="legacy-catalog-card">
               <span className="summary-label">Compatible Scales</span>
               <h2>{analysis.compatibleScales.length}</h2>
               <p>
@@ -126,69 +158,17 @@ export function ChordAnalyzerPage() {
             </article>
           </div>
 
-          <article className="detail-card">
-            <div className="detail-header">
-              <div>
-                <span className="summary-label">Inversions & Voicings</span>
-                <h2>Playable reordered stacks</h2>
-                <p>
-                  These mirror the legacy analyzer’s quick inversion cards, but stay consistent with
-                  the source audio layer.
-                </p>
-              </div>
-            </div>
+          <ChordInversionsPanel
+            description="Legacy-style inversion chooser for the analyzed chord."
+            inversions={analysis.inversions}
+            title={analysis.raw}
+          />
 
-            <div className="feature-grid">
-              {analysis.inversions.map((inversion) => (
-                <article className="feature-card" key={inversion.label}>
-                  <div className="feature-card-header">
-                    <div>
-                      <span className="card-tag">Voicing</span>
-                      <h3>{inversion.label}</h3>
-                    </div>
-                    <button className="ghost-button" onClick={() => playChord(inversion.notes)}>
-                      Play
-                    </button>
-                  </div>
-                  <NoteBadgeList notes={inversion.notes} keySignature={currentKey} />
-                </article>
-              ))}
-            </div>
-          </article>
-
-          <article className="detail-card">
-            <div className="detail-header">
-              <div>
-                <span className="summary-label">Compatible Scales</span>
-                <h2>Scale families that contain the chord tones</h2>
-                <p>
-                  These are ranked source-side matches, useful for improvisation and reharmonization.
-                </p>
-              </div>
-            </div>
-
-            {analysis.compatibleScales.length ? (
-              <div className="feature-grid">
-                {analysis.compatibleScales.map((scale) => (
-                  <article className="feature-card" key={scale.name}>
-                    <div className="feature-card-header">
-                      <div>
-                        <span className="card-tag">{scale.region}</span>
-                        <h3>{scale.name}</h3>
-                      </div>
-                      <button className="ghost-button" onClick={() => playScale(scale.notes)}>
-                        Play
-                      </button>
-                    </div>
-                    <p className="card-copy">Extra notes beyond the chord: {scale.score}</p>
-                    <NoteBadgeList notes={scale.notes} keySignature={currentKey} />
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <p className="card-copy">No source-side scale match was found for this symbol yet.</p>
-            )}
-          </article>
+          <CompatibleScalesPanel
+            compatibleScales={analysis.compatibleScales}
+            description="Scale families that contain the chord tones."
+            title={analysis.raw}
+          />
         </>
       )}
     </section>

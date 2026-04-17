@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { playNoteSequence, playProgression } from "../../audio/audioEngine";
 import { loadVersionedState, persistVersionedState } from "../../app/persistence/storage";
 import { useAppStore } from "../../app/store/useAppStore";
+import { useShellBridgeStore } from "../../app/store/useShellBridgeStore";
 import {
   SONGWRITING_METHODS,
   SONGWRITING_MOOD_BANK,
@@ -91,6 +92,7 @@ function downloadText(filename: string, content: string) {
 
 export function SongwritingLabPage() {
   const currentKey = useAppStore((state) => state.currentKey);
+  const updateRoute = useShellBridgeStore((state) => state.updateRoute);
   const initial = useMemo(() => loadState(), []);
   const [draft, setDraft] = useState(initial.draft);
   const [activeSectionIndex, setActiveSectionIndex] = useState(initial.activeSectionIndex);
@@ -118,14 +120,35 @@ export function SongwritingLabPage() {
     progressionOptions.find((progression) => progression.name === draft.selectedProgression) ??
     progressionOptions[0] ??
     null;
-  const resolvedProgression = selectedProgression
-    ? getProgressionPreview(selectedProgression.name, currentKey)
-    : [];
+  const resolvedProgression = useMemo(
+    () => (selectedProgression ? getProgressionPreview(selectedProgression.name, currentKey) : []),
+    [currentKey, selectedProgression?.name],
+  );
+  const playableNoteSet = useMemo(
+    () => Array.from(new Set(resolvedProgression.flatMap((chord) => chord.notes))),
+    [resolvedProgression],
+  );
+  const playableLabel = `${draft.title} • ${draft.style} • ${draft.selectedProgression} in ${currentKey}`;
   const rhymeScheme = detectRhymeScheme(activeSection?.lyrics ?? "", draft.rhymeType);
   const lineMetrics = getLineMetrics(activeSection?.lyrics ?? "");
   const endWords = getEndWordFrequency(activeSection?.lyrics ?? "");
   const progressionAnalysis = analyzeSongProgression(draft.style, draft.selectedProgression);
   const moodPalette = SONGWRITING_MOOD_BANK[draft.mood] || SONGWRITING_MOOD_BANK.Reflective;
+
+  const playCurrent = useCallback(() => {
+    if (!resolvedProgression.length) return;
+    playProgression(resolvedProgression.map((chord) => chord.notes));
+  }, [resolvedProgression]);
+
+  const clear = useCallback(() => {
+    setDraft(createDefaultSongwritingDraft());
+    setActiveSectionIndex(0);
+    setTitleIdeas([]);
+    setHookIdeas([]);
+    setLineStarters([]);
+    setProsody(null);
+    setLastMethod(null);
+  }, []);
 
   function updateDraft<K extends keyof SongwritingDraft>(field: K, value: SongwritingDraft[K]) {
     setDraft((current) => ({ ...current, [field]: value }));
@@ -231,38 +254,41 @@ export function SongwritingLabPage() {
     downloadText(`${draft.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase() || "song-draft"}.txt`, lines.join("\n"));
   }
 
-  function resetDraft() {
-    setDraft(createDefaultSongwritingDraft());
-    setActiveSectionIndex(0);
-    setTitleIdeas([]);
-    setHookIdeas([]);
-    setLineStarters([]);
-    setProsody(null);
-    setLastMethod(null);
-  }
+  useEffect(() => {
+    updateRoute("songwriting", {
+      title: "Songwriting Lab",
+      subtitle: "Songwriting and lyric drafting tools.",
+      playableLabel,
+      playableNoteSet,
+      playCurrent,
+      clear,
+    });
+  }, [clear, playableLabel, playableNoteSet, playCurrent, updateRoute]);
 
   return (
     <section className="page-section">
-      <div className="page-hero">
-        <div>
-          <span className="eyebrow">Source Feature</span>
-          <h1>Songwriting Lab</h1>
-          <p>
-            Draft lyrics, shape form, generate titles and hooks, inspect rhyme and prosody, and
-            keep progression ideas inside the source app.
-          </p>
-        </div>
-        <div className="hero-actions">
+      <div className="legacy-tool-panel">
+        <div className="legacy-tool-panel__header">
+          <div>
+            <span className="eyebrow">Lyric Workshop</span>
+            <h1 className="legacy-tool-panel__title">Songwriting Lab</h1>
+            <p className="legacy-tool-panel__copy">
+              Draft lyrics, shape form, generate titles and hooks, inspect rhyme and prosody, and
+              keep progression ideas inside the source app.
+            </p>
+          </div>
+          <div className="hero-actions">
           <button className="primary-button" onClick={exportDraft}>
             Export Draft
           </button>
-          <button className="ghost-button" onClick={resetDraft}>
+          <button className="ghost-button" onClick={clear}>
             Reset Draft
           </button>
+          </div>
         </div>
       </div>
 
-      <article className="detail-card">
+      <article className="legacy-tool-panel">
         <div className="song-grid song-grid--meta">
           <input value={draft.title} onChange={(event) => updateDraft("title", event.target.value)} placeholder="Song title" />
           <select value={draft.mood} onChange={(event) => updateDraft("mood", event.target.value as SongwritingDraft["mood"])}>
@@ -292,12 +318,12 @@ export function SongwritingLabPage() {
       </article>
 
       <div className="songwriting-layout">
-        <article className="detail-card">
-          <div className="detail-header">
+        <article className="legacy-preview-panel">
+          <div className="legacy-tool-panel__header">
             <div>
               <span className="summary-label">Structure</span>
               <h2>{draft.title}</h2>
-              <p>Manage section order and load common song forms.</p>
+              <p className="legacy-tool-panel__copy">Manage section order and load common song forms.</p>
             </div>
             <select defaultValue="" onChange={(event) => applyTemplate(event.target.value)}>
               <option value="" disabled>
@@ -363,8 +389,8 @@ export function SongwritingLabPage() {
         </article>
 
         <div className="songwriting-sidebar">
-          <article className="detail-card">
-            <div className="detail-header">
+          <article className="legacy-selection-card">
+            <div className="legacy-tool-panel__header">
               <div>
                 <span className="summary-label">Methods</span>
                 <h2>Writing prompts</h2>
@@ -388,8 +414,8 @@ export function SongwritingLabPage() {
             </div>
           </article>
 
-          <article className="detail-card">
-            <div className="detail-header">
+          <article className="legacy-selection-card">
+            <div className="legacy-tool-panel__header">
               <div>
                 <span className="summary-label">Hooks & Titles</span>
                 <h2>Idea generators</h2>
@@ -429,8 +455,8 @@ export function SongwritingLabPage() {
             </div>
           </article>
 
-          <article className="detail-card">
-            <div className="detail-header">
+          <article className="legacy-selection-card">
+            <div className="legacy-tool-panel__header">
               <div>
                 <span className="summary-label">Prosody & Rhyme</span>
                 <h2>Section diagnostics</h2>
@@ -479,8 +505,8 @@ export function SongwritingLabPage() {
             </div>
           </article>
 
-          <article className="detail-card">
-            <div className="detail-header">
+          <article className="legacy-selection-card">
+            <div className="legacy-tool-panel__header">
               <div>
                 <span className="summary-label">Harmony & Melody</span>
                 <h2>{draft.style}</h2>
@@ -551,8 +577,8 @@ export function SongwritingLabPage() {
             ) : null}
           </article>
 
-          <article className="detail-card">
-            <div className="detail-header">
+          <article className="legacy-selection-card">
+            <div className="legacy-tool-panel__header">
               <div>
                 <span className="summary-label">Mood Palette</span>
                 <h2>{draft.mood}</h2>

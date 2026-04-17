@@ -91,23 +91,66 @@ const KEY_DISTANCE_RELATIONSHIPS: Record<number, { name: string; desc: string }>
 export const CIRCLE_MAJOR_KEYS = ["C", "G", "D", "A", "E", "B", "F#", "Db", "Ab", "Eb", "Bb", "F"] as const;
 export const CIRCLE_MINOR_KEYS = ["A", "E", "B", "F#", "C#", "G#", "D#", "Bb", "F", "C", "G", "D"] as const;
 
-export function normalizeNote(note: string) {
-  const match = note.match(/^([A-G][#b]?)([0-9])?$/);
-  if (!match) return note;
+const ENHARMONIC_MAP: Record<string, string> = {
+  Db: "C#",
+  Eb: "D#",
+  Gb: "F#",
+  Ab: "G#",
+  Bb: "A#",
+  "E#": "F",
+  "B#": "C",
+  Cb: "B",
+  Fb: "E",
+};
 
-  const enharmonicMap: Record<string, string> = {
-    Db: "C#",
-    Eb: "D#",
-    Gb: "F#",
-    Ab: "G#",
-    Bb: "A#",
-    "E#": "F",
-    "B#": "C",
-    Cb: "B",
-    Fb: "E",
+interface ParsedNote {
+  noteClass: string;
+  octave?: string;
+  cents: number;
+}
+
+function parseNote(note: string): ParsedNote | null {
+  const trimmed = note.trim();
+  if (!trimmed) return null;
+
+  let target = trimmed;
+  let cents = 0;
+
+  if (target.includes("_")) {
+    const [base, centsPart] = target.split("_");
+    target = base;
+    const parsedCents = Number.parseFloat(centsPart);
+    if (Number.isFinite(parsedCents)) cents = parsedCents;
+  } else if (target.endsWith("^")) {
+    target = target.slice(0, -1);
+    cents = 50;
+  } else if (target.endsWith("d")) {
+    target = target.slice(0, -1);
+    cents = -50;
+  }
+
+  const match = target.match(/^([A-G][#b]?)([0-9]+)?$/);
+  if (!match) return null;
+
+  return {
+    noteClass: match[1],
+    octave: match[2],
+    cents,
   };
+}
 
-  return `${enharmonicMap[match[1]] || match[1]}${match[2] || ""}`;
+function formatCentsSuffix(cents: number) {
+  if (!cents) return "";
+  return cents > 0 ? ` +${cents}c` : ` ${cents}c`;
+}
+
+export function normalizeNote(note: string) {
+  const parsed = parseNote(note);
+  if (!parsed) return note;
+
+  const normalizedClass = ENHARMONIC_MAP[parsed.noteClass] || parsed.noteClass;
+  const centsSuffix = parsed.cents ? `_${Math.round(parsed.cents * 100) / 100}` : "";
+  return `${normalizedClass}${parsed.octave || ""}${centsSuffix}`;
 }
 
 export function getRootFromKey(key: string) {
@@ -127,7 +170,9 @@ export function usesFlats(key: string) {
 }
 
 export function formatNoteClass(note: string, key: string) {
-  const noteClass = normalizeNote(note).replace(/[0-9]/g, "");
+  const parsed = parseNote(normalizeNote(note));
+  if (!parsed) return note;
+  const noteClass = parsed.noteClass;
   if (!usesFlats(key)) return noteClass;
 
   const flatMap: Record<string, string> = {
@@ -142,14 +187,25 @@ export function formatNoteClass(note: string, key: string) {
 }
 
 export function formatNote(note: string, key: string) {
-  const match = normalizeNote(note).match(/^([A-G][#b]?)([0-9])?/);
-  if (!match) return note;
-  return `${formatNoteClass(match[1], key)}${match[2] || ""}`;
+  const parsed = parseNote(normalizeNote(note));
+  if (!parsed) return note;
+  return `${formatNoteClass(parsed.noteClass, key)}${parsed.octave || ""}${formatCentsSuffix(parsed.cents)}`;
 }
 
 export function getNoteClass(note: string) {
-  const match = normalizeNote(note).match(/^([A-G][#b]?)/);
-  return match ? match[1] : normalizeNote(note).replace(/[0-9]/g, "");
+  const parsed = parseNote(normalizeNote(note));
+  return parsed ? parsed.noteClass : normalizeNote(note).replace(/[0-9]/g, "");
+}
+
+export function getPitchToken(note: string) {
+  const parsed = parseNote(normalizeNote(note));
+  if (!parsed) return normalizeNote(note).replace(/[0-9]/g, "");
+  return `${parsed.noteClass}${parsed.cents ? `_${Math.round(parsed.cents * 100) / 100}` : ""}`;
+}
+
+export function isMicrotonalNote(note: string) {
+  const parsed = parseNote(normalizeNote(note));
+  return Boolean(parsed?.cents);
 }
 
 export function transposeNote(note: string, semitones: number) {

@@ -1,6 +1,7 @@
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { resolveLearningActionRoute, LEARNING_PATHS } from "../../domain/learning";
 import { useLearningStore } from "../../app/store/useLearningStore";
+import { useShellBridgeStore } from "../../app/store/useShellBridgeStore";
 
 export function LearningPathsPage() {
   const completedSteps = useLearningStore((state) => state.completedSteps);
@@ -8,56 +9,67 @@ export function LearningPathsPage() {
   const level = useLearningStore((state) => state.level);
   const completeStep = useLearningStore((state) => state.completeStep);
   const resetProgress = useLearningStore((state) => state.resetProgress);
+  const updateRoute = useShellBridgeStore((state) => state.updateRoute);
 
   const totalSteps = useMemo(
     () => LEARNING_PATHS.reduce((sum, path) => sum + path.steps.length, 0),
     [],
   );
 
-  function handleReset() {
+  const handleReset = useCallback(() => {
     if (window.confirm("Reset all learning progress and XP?")) {
       resetProgress();
     }
-  }
+  }, [resetProgress]);
+
+  const playableLabel = `${level > 0 ? `Lvl ${level}` : "Level 0"} • ${xp} XP • ${
+    completedSteps.length
+  }/${totalSteps} steps`;
+
+  useEffect(() => {
+    updateRoute("learning", {
+      title: "Learning Paths",
+      subtitle: "Guided theory tracks and XP milestones.",
+      playableLabel,
+      playableNoteSet: [],
+      playCurrent: null,
+      clear: handleReset,
+    });
+  }, [handleReset, playableLabel, updateRoute]);
 
   return (
     <section className="page-section">
-      <div className="page-hero">
-        <div>
-          <span className="eyebrow">Source Feature</span>
-          <h1>Learning Paths</h1>
-          <p>
-            Guided tracks, XP, and levels are now source-side and stored on the same legacy
-            progress key, so existing mastery progress carries forward.
-          </p>
+      <article className="legacy-tool-panel">
+        <div className="legacy-tool-panel__header">
+          <div>
+            <span className="eyebrow">Guided Study</span>
+            <h1 className="legacy-tool-panel__title">Learning Paths</h1>
+            <p className="legacy-tool-panel__copy">
+              Guided tracks, XP, and levels stay on the legacy progress key, but the page body now
+              follows the denser legacy study-board format.
+            </p>
+          </div>
+          <div className="legacy-toolbar-row">
+            <span className="legacy-toolbar-chip">
+              Level <strong>Lvl {level}</strong>
+            </span>
+            <span className="legacy-toolbar-chip">
+              XP <strong>{xp} XP</strong>
+            </span>
+            <span className="legacy-toolbar-chip">
+              Progress <strong>{completedSteps.length} / {totalSteps}</strong>
+            </span>
+          </div>
         </div>
-        <div className="hero-actions">
+        <div className="legacy-toolbar-row">
           <button className="ghost-button" onClick={handleReset}>
             Reset Progress
           </button>
         </div>
-      </div>
+      </article>
 
-      <div className="summary-grid">
-        <article className="summary-card">
-          <span className="summary-label">Level</span>
-          <h2>Lvl {level}</h2>
-          <p>Each completed step awards 100 XP. Every 500 XP advances one level.</p>
-        </article>
-        <article className="summary-card">
-          <span className="summary-label">Progress</span>
-          <h2>{completedSteps.length} / {totalSteps}</h2>
-          <p>Total mastery tracks the number of completed steps across every guided path.</p>
-        </article>
-        <article className="summary-card">
-          <span className="summary-label">XP</span>
-          <h2>{xp} XP</h2>
-          <p>Progress is shared through the legacy learning storage key for backward compatibility.</p>
-        </article>
-      </div>
-
-      <article className="detail-card">
-        <div className="detail-header">
+      <article className="legacy-tool-panel">
+        <div className="legacy-tool-panel__header">
           <div>
             <span className="summary-label">Tracks</span>
             <h2>{LEARNING_PATHS.length} guided paths</h2>
@@ -66,24 +78,24 @@ export function LearningPathsPage() {
         </div>
       </article>
 
-      <div className="feature-grid learning-path-grid">
+      <div className="legacy-catalog-grid learning-path-grid">
         {LEARNING_PATHS.map((path) => {
           const completedInPath = path.steps.filter((step) => completedSteps.includes(step.id)).length;
           const progressPercent = Math.round((completedInPath / path.steps.length) * 100);
 
           return (
-            <article key={path.id} className="feature-card learning-path-card">
-              <div className="feature-card-header">
+            <article key={path.id} className="legacy-catalog-card learning-path-card">
+              <div className="legacy-catalog-card__header">
                 <div>
-                  <span className="card-tag">{path.track}</span>
-                  <h3>{path.name}</h3>
+                  <span className="legacy-catalog-card__eyebrow">{path.track}</span>
+                  <h3 className="legacy-catalog-card__title">{path.name}</h3>
                 </div>
-                <span className="info-chip">
+                <span className="legacy-preview-chip">
                   {completedInPath}/{path.steps.length}
                 </span>
               </div>
 
-              <p className="card-copy">{path.desc}</p>
+              <p className="legacy-catalog-card__subtitle">{path.desc}</p>
 
               <div className="learning-progress-shell">
                 <div className="learning-progress-bar" style={{ width: `${progressPercent}%` }} />

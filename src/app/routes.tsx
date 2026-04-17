@@ -1,7 +1,8 @@
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, useEffect } from "react";
 import type { ComponentType, ReactNode } from "react";
-import { Navigate, useRoutes } from "react-router-dom";
+import { Navigate, useLocation, useRoutes } from "react-router-dom";
 import { SourceLayout } from "./SourceLayout";
+import { useShellBridgeStore } from "./store/useShellBridgeStore";
 
 function lazyNamed<TModule extends Record<string, unknown>, TName extends keyof TModule>(
   loader: () => Promise<TModule>,
@@ -140,9 +141,34 @@ const RecordingGuidePage = lazyNamed(
   "RecordingGuidePage",
 );
 
+function RouteShellState({
+  subtitle,
+  title,
+}: {
+  title: string;
+  subtitle: string;
+}) {
+  const location = useLocation();
+  const updateRoute = useShellBridgeStore((state) => state.updateRoute);
+
+  const match = location.pathname.match(/\/app\/([^/]+)/);
+  const routeId = match?.[1] ?? null;
+
+  useEffect(() => {
+    if (!routeId) return;
+    updateRoute(routeId, { title, subtitle });
+  }, [routeId, subtitle, title, updateRoute]);
+
+  return null;
+}
+
 function RouteLoadingFallback() {
   return (
     <section className="page-section">
+      <RouteShellState
+        subtitle="Route-level chunks are being loaded on demand."
+        title="Loading Feature"
+      />
       <div className="page-hero">
         <div>
           <span className="eyebrow">Loading</span>
@@ -166,6 +192,10 @@ function RouteLoadingFallback() {
 function NotFoundPage() {
   return (
     <section className="page-section">
+      <RouteShellState
+        subtitle="The current URL does not map to a source-side feature."
+        title="Route Not Found"
+      />
       <div className="page-hero">
         <div>
           <span className="eyebrow">Not Found</span>

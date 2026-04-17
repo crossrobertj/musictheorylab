@@ -1,6 +1,9 @@
 import {
+  CHORD_TEMPLATES,
   buildChordFromRootAndQuality,
   formatNoteClass,
+  getMidiNumber,
+  getNoteClass,
   getNotesFromIntervals,
   normalizeNote,
   transposeNote,
@@ -19,6 +22,15 @@ export interface HarmonizedScaleChord {
   quality: string;
   symbol: string;
   notes: string[];
+}
+
+export interface HarmonizedScaleRow {
+  degree: number;
+  numeral: string;
+  triad: string;
+  seventh: string;
+  triadNotes: string[];
+  seventhNotes: string[];
 }
 
 export interface CustomScaleDefinition {
@@ -81,6 +93,8 @@ const TRIAD_QUALITY_MAP: Record<string, { label: string; templateQuality: string
   "0,5,7": { label: "sus4", templateQuality: "sus4", symbol: "sus4" },
 };
 
+const ROMAN_NUMERALS = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII"] as const;
+
 export function normalizeScaleIntervals(intervals: readonly number[]) {
   return Array.from(new Set(intervals))
     .filter((interval) => interval >= 0 && interval < 12)
@@ -128,7 +142,7 @@ function buildScaleDegreeTriad(scaleNotes: string[], degree: number) {
     previousMidi = noteToMidi(note);
   }
 
-  const root = triad[0].replace(/[0-9]/g, "");
+  const root = getNoteClass(triad[0]);
   const intervals = triad.map((note) => ((noteToMidi(note) - noteToMidi(triad[0])) % 12 + 12) % 12);
   const quality = identifyTriadQuality(intervals);
 
@@ -152,15 +166,74 @@ function buildScaleDegreeTriad(scaleNotes: string[], degree: number) {
   } satisfies HarmonizedScaleChord;
 }
 
+function buildScaleDegreeChord(scaleNotes: string[], degree: number, size: 3 | 4) {
+  if (scaleNotes.length < size) return [];
+
+  const chord: string[] = [];
+  let previousMidi = Number.NEGATIVE_INFINITY;
+
+  for (let step = 0; step < size; step += 1) {
+    const index = (degree + step * 2) % scaleNotes.length;
+    let note = scaleNotes[index];
+    while (chord.length > 0 && previousMidi >= 0) {
+      if (noteToMidi(note) > previousMidi) break;
+      note = transposeNote(note, 12);
+    }
+    chord.push(note);
+    previousMidi = noteToMidi(note);
+  }
+
+  return chord;
+}
+
+function identifyChordFromNotes(notes: string[]) {
+  if (!notes.length) {
+    return {
+      quality: "cluster",
+      symbol: "?",
+    };
+  }
+
+  const root = getNoteClass(notes[0]);
+  const rootMidi = noteToMidi(notes[0]);
+  const targetKey = notes
+    .map((note) => ((noteToMidi(note) - rootMidi) % 12 + 12) % 12)
+    .join(",");
+
+  for (const [quality, template] of Object.entries(CHORD_TEMPLATES)) {
+    if (template.intervals.join(",") === targetKey) {
+      return {
+        quality,
+        symbol: `${formatNoteClass(root, `${root} Major`)}${template.symbol}`,
+      };
+    }
+  }
+
+  const triadMatch = TRIAD_QUALITY_MAP[targetKey];
+  if (triadMatch) {
+    return {
+      quality: triadMatch.label,
+      symbol: `${formatNoteClass(root, `${root} Major`)}${triadMatch.symbol}`,
+    };
+  }
+
+  return {
+    quality: "cluster",
+    symbol: `${formatNoteClass(root, `${root} Major`)} ?`,
+  };
+}
+
+function getRomanNumeralForQuality(degree: number, quality: string) {
+  const base = ROMAN_NUMERALS[degree] ?? `${degree + 1}`;
+
+  if (quality === "dim" || quality === "dim7") return `${base.toLowerCase()}°`;
+  if (quality === "min7b5") return `${base.toLowerCase()}ø`;
+  if (quality === "minor" || quality.startsWith("min")) return base.toLowerCase();
+  return base;
+}
+
 function noteToMidi(note: string) {
-  const match = normalizeNote(note).match(/^([A-G][#b]?)([0-9]+)$/);
-  if (!match) return 60;
-  const noteClass = match[1];
-  const octave = Number.parseInt(match[2], 10);
-  const noteClasses = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-  const index = noteClasses.indexOf(noteClass);
-  if (index < 0) return 60;
-  return (octave + 1) * 12 + index;
+  return getMidiNumber(note);
 }
 
 export function harmonizeScale(root: string, intervals: readonly number[]) {
@@ -169,6 +242,27 @@ export function harmonizeScale(root: string, intervals: readonly number[]) {
   return scaleNotes
     .map((_, degree) => buildScaleDegreeTriad(scaleNotes, degree))
     .filter((chord): chord is HarmonizedScaleChord => chord !== null);
+}
+
+export function harmonizeScaleRows(root: string, intervals: readonly number[]) {
+  const normalizedIntervals = normalizeScaleIntervals(intervals);
+  const scaleNotes = getNotesFromIntervals(`${normalizeNote(root)}4`, normalizedIntervals);
+
+  return scaleNotes.map((_, degree) => {
+    const triadNotes = buildScaleDegreeChord(scaleNotes, degree, 3);
+    const seventhNotes = buildScaleDegreeChord(scaleNotes, degree, 4);
+    const triad = identifyChordFromNotes(triadNotes);
+    const seventh = identifyChordFromNotes(seventhNotes);
+
+    return {
+      degree: degree + 1,
+      numeral: getRomanNumeralForQuality(degree, triad.quality),
+      triad: triad.symbol,
+      seventh: seventh.symbol,
+      triadNotes,
+      seventhNotes,
+    } satisfies HarmonizedScaleRow;
+  });
 }
 
 export function describeScaleDensity(count: number) {

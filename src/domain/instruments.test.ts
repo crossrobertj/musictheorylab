@@ -3,6 +3,7 @@ import {
   getDefaultInstrumentConfigs,
   getInstrumentConfig,
   getInstrumentEntries,
+  getGroupedInstrumentEntries,
   mergeInstrumentConfigs,
   slugifyInstrumentId,
 } from "./instruments";
@@ -25,6 +26,8 @@ describe("instruments domain", () => {
     expect(getInstrumentConfig("custom-lute", merged).name).toBe("Custom Lute");
     expect(getInstrumentConfig("missing", merged).name).toBe(defaults.piano.name);
     expect(getInstrumentEntries(merged).some(([id]) => id === "custom-lute")).toBe(true);
+    const groupedEntries = getGroupedInstrumentEntries(merged);
+    expect(groupedEntries[groupedEntries.length - 1]?.label).toBe("Custom");
   });
 
   it("slugifies custom instrument ids safely", () => {

@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../../app/store/useAppStore";
+import { useShellBridgeStore } from "../../app/store/useShellBridgeStore";
 import { MetronomePage } from "./MetronomePage";
 
 const audioMocks = vi.hoisted(() => ({
@@ -18,6 +19,8 @@ describe("MetronomePage", () => {
     vi.useFakeTimers();
     audioMocks.playMetronomeClick.mockReset();
     audioMocks.stopAllAudio.mockReset();
+    useShellBridgeStore.getState().reset();
+    useShellBridgeStore.getState().syncRoute("metronome");
     useAppStore.setState({
       currentView: "metronome",
       currentKey: "C Major",
@@ -53,10 +56,21 @@ describe("MetronomePage", () => {
     expect(screen.getByText("Grouping 3+3+2+2+3")).toBeInTheDocument();
   });
 
-  it("starts ticking and stops cleanly", () => {
+  it("registers shell bridge state and stops cleanly", () => {
     render(<MetronomePage />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Start Metronome" }));
+    expect(useShellBridgeStore.getState().routeId).toBe("metronome");
+    expect(useShellBridgeStore.getState().title).toBe("Metronome");
+    expect(useShellBridgeStore.getState().subtitle).toBe("High-precision practice metronome.");
+    expect(useShellBridgeStore.getState().playableLabel).toBe(
+      "120 BPM • 4/4 • Quarter notes • accents 4",
+    );
+    expect(useShellBridgeStore.getState().playCurrent).toEqual(expect.any(Function));
+    expect(useShellBridgeStore.getState().clear).toEqual(expect.any(Function));
+
+    act(() => {
+      useShellBridgeStore.getState().playCurrent?.();
+    });
     expect(screen.getByRole("heading", { name: "Running" })).toBeInTheDocument();
 
     act(() => {
@@ -65,9 +79,15 @@ describe("MetronomePage", () => {
 
     expect(audioMocks.playMetronomeClick).toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "Stop Metronome" }));
+    act(() => {
+      useShellBridgeStore.getState().clear?.();
+    });
 
     expect(screen.getByRole("heading", { name: "Stopped" })).toBeInTheDocument();
+    expect(screen.getByText("120 BPM")).toBeInTheDocument();
+    expect(useShellBridgeStore.getState().playableLabel).toBe(
+      "120 BPM • 4/4 • Quarter notes • accents 4",
+    );
     expect(audioMocks.stopAllAudio).toHaveBeenCalled();
   });
 });

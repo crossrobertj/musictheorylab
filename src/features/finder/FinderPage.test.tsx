@@ -1,10 +1,16 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FinderPage } from "./FinderPage";
+import { useShellBridgeStore } from "../../app/store/useShellBridgeStore";
 
-vi.mock("../../audio/audioEngine", () => ({
+const audioMocks = vi.hoisted(() => ({
   playChord: vi.fn(),
   playScale: vi.fn(),
+}));
+
+vi.mock("../../audio/audioEngine", () => ({
+  playChord: audioMocks.playChord,
+  playScale: audioMocks.playScale,
 }));
 
 vi.mock("../../components/KeyboardPreview", () => ({
@@ -69,22 +75,48 @@ vi.mock("./useFinderAnalysis", () => ({
 }));
 
 describe("FinderPage", () => {
-  it("updates selected note state and clears the current selection", () => {
+  beforeEach(() => {
+    audioMocks.playChord.mockReset();
+    audioMocks.playScale.mockReset();
+    useShellBridgeStore.getState().reset();
+  });
+
+  it("updates selected note state and clears the current selection", async () => {
     render(<FinderPage />);
 
-    expect(screen.getByRole("heading", { name: "C • E • G" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Harmonizing Matches for/i })).toBeInTheDocument();
     expect(screen.getByText("Worker")).toBeInTheDocument();
     expect(screen.getByText("Exact chords: 1")).toBeInTheDocument();
+    expect(screen.getByText(/Harmonizing Matches for/i)).toBeInTheDocument();
+    expect(screen.getByText(/Current key context:/i)).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(useShellBridgeStore.getState().routeId).toBe("finder");
+    });
+    expect(useShellBridgeStore.getState().title).toBe("Chord & Scale Finder");
+    expect(useShellBridgeStore.getState().subtitle).toBe(
+      "Select notes to identify matching chords and compatible scales.",
+    );
+    expect(useShellBridgeStore.getState().playableLabel).toBe("Selected notes: C • E • G");
+    expect(useShellBridgeStore.getState().playableNoteSet).toEqual(["C4", "E4", "G4"]);
+
+    useShellBridgeStore.getState().playCurrent?.();
+    expect(audioMocks.playChord).toHaveBeenCalledWith(["C4", "E4", "G4"]);
 
     fireEvent.click(screen.getByRole("button", { name: "B" }));
 
-    expect(screen.getByRole("heading", { name: "C • E • G • B" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Harmonizing Matches for/i })).toBeInTheDocument();
     expect(screen.getByText("Exact chords: 0")).toBeInTheDocument();
     expect(screen.getByText("Scale matches: 1")).toBeInTheDocument();
+    expect(useShellBridgeStore.getState().playableNoteSet).toEqual(["C4", "E4", "G4", "B4"]);
 
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
 
     expect(screen.getByRole("heading", { name: "No notes selected" })).toBeInTheDocument();
     expect(screen.getByText("Compatible scales: 0")).toBeInTheDocument();
+    expect(useShellBridgeStore.getState().playableLabel).toBe("No notes selected");
+    expect(useShellBridgeStore.getState().playableNoteSet).toEqual([]);
+    expect(screen.queryByText("Harmonizing Matches")).not.toBeInTheDocument();
+
   });
 });

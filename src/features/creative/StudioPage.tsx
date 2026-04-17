@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { playChord, playProgression } from "../../audio/audioEngine";
 import { useAppStore } from "../../app/store/useAppStore";
 import { FavoriteToggleButton } from "../../components/FavoriteToggleButton";
 import { NoteBadgeList } from "../../components/NoteBadgeList";
+import { useShellBridgeStore } from "../../app/store/useShellBridgeStore";
 import {
   STUDIO_DEGREE_OPTIONS,
   analyzeStudioProgression,
@@ -10,16 +11,46 @@ import {
 } from "../../domain/creative";
 import { buildMidiFromChordProgression, downloadMidiFile } from "../../domain/midi";
 
+const DEFAULT_STUDIO_DEGREES = ["I", "V", "vi", "IV"];
+const DEFAULT_PENDING_DEGREE = "I";
+
 export function StudioPage() {
   const currentKey = useAppStore((state) => state.currentKey);
   const tempo = useAppStore((state) => state.tempo);
-  const [degrees, setDegrees] = useState<string[]>(["I", "V", "vi", "IV"]);
-  const [pendingDegree, setPendingDegree] = useState("I");
+  const updateRoute = useShellBridgeStore((state) => state.updateRoute);
+  const [degrees, setDegrees] = useState<string[]>(DEFAULT_STUDIO_DEGREES);
+  const [pendingDegree, setPendingDegree] = useState(DEFAULT_PENDING_DEGREE);
 
   const analysis = useMemo(
     () => analyzeStudioProgression(degrees, currentKey),
     [currentKey, degrees],
   );
+  const playableNoteSet = useMemo(
+    () => Array.from(new Set(analysis.resolvedChords.flatMap((chord) => chord.notes))),
+    [analysis.resolvedChords],
+  );
+  const playableLabel = useMemo(
+    () => `${degrees.join(" • ")} • ${currentKey}`,
+    [currentKey, degrees],
+  );
+  const playCurrent = useCallback(() => {
+    playProgression(analysis.resolvedChords.map((chord) => chord.notes));
+  }, [analysis.resolvedChords]);
+  const clear = useCallback(() => {
+    setDegrees(DEFAULT_STUDIO_DEGREES);
+    setPendingDegree(DEFAULT_PENDING_DEGREE);
+  }, []);
+
+  useEffect(() => {
+    updateRoute("studio", {
+      title: "Progression Studio",
+      subtitle: "Compose Roman-numeral chains and audition them in the active key.",
+      playableLabel,
+      playableNoteSet,
+      playCurrent,
+      clear,
+    });
+  }, [clear, playableLabel, playCurrent, playableNoteSet, updateRoute]);
 
   const favoriteItem = {
     type: "progression" as const,
@@ -56,31 +87,33 @@ export function StudioPage() {
 
   return (
     <section className="page-section">
-      <div className="page-hero">
-        <div>
-          <span className="eyebrow">Source Feature</span>
-          <h1>Progression Studio</h1>
-          <p>
-            Build Roman-numeral progressions, hear them in the active key, analyze the harmonic
-            function chain, and save useful loops into Favorites.
-          </p>
-        </div>
-        <div className="hero-actions">
+      <div className="legacy-tool-panel">
+        <div className="legacy-tool-panel__header">
+          <div>
+            <span className="eyebrow">Composition Tool</span>
+            <h1 className="legacy-tool-panel__title">Progression Studio</h1>
+            <p className="legacy-tool-panel__copy">
+              Build Roman-numeral progressions, hear them in the active key, analyze the harmonic
+              function chain, and save useful loops into Favorites.
+            </p>
+          </div>
+          <div className="hero-actions">
           <FavoriteToggleButton item={favoriteItem} />
           <button
             className="primary-button"
-            onClick={() => playProgression(analysis.resolvedChords.map((chord) => chord.notes))}
+            onClick={playCurrent}
           >
             Play Progression
           </button>
           <button className="ghost-button" onClick={exportMidi}>
             Export MIDI
           </button>
+          </div>
         </div>
       </div>
 
-      <div className="summary-grid">
-        <article className="summary-card">
+      <div className="legacy-catalog-grid">
+        <article className="legacy-catalog-card">
           <span className="summary-label">Builder</span>
           <h2>{currentKey}</h2>
           <div className="toolbar-cluster">
@@ -97,31 +130,31 @@ export function StudioPage() {
             <button className="ghost-button" onClick={() => setDegrees(randomizeStudioProgression(currentKey))}>
               Randomize
             </button>
-            <button className="ghost-button" onClick={() => setDegrees(["I"])}>
+            <button className="ghost-button" onClick={clear}>
               Clear
             </button>
           </div>
         </article>
 
-        <article className="summary-card">
+        <article className="legacy-catalog-card">
           <span className="summary-label">Matched Library Pattern</span>
           <h2>{analysis.matched?.name ?? "Custom Sequence"}</h2>
           <p>{analysis.matched?.desc ?? "This exact Roman string does not currently match a catalog progression."}</p>
         </article>
 
-        <article className="summary-card">
+        <article className="legacy-catalog-card">
           <span className="summary-label">Function Chain</span>
           <h2>{analysis.functions.join(" → ")}</h2>
           <p>Use the sequence below to trim or extend the harmonic rhythm.</p>
         </article>
       </div>
 
-      <article className="detail-card">
-        <div className="detail-header">
+      <article className="legacy-preview-panel">
+        <div className="legacy-tool-panel__header">
           <div>
             <span className="summary-label">Roman Sequence</span>
             <h2>{degrees.join(" • ")}</h2>
-            <p>Click any chip to remove it from the studio chain.</p>
+            <p className="legacy-tool-panel__copy">Click any chip to remove it from the studio chain.</p>
           </div>
         </div>
         <div className="scale-strip">
@@ -133,19 +166,19 @@ export function StudioPage() {
         </div>
       </article>
 
-      <div className="feature-grid">
+      <div className="legacy-catalog-grid">
         {analysis.resolvedChords.map((chord, index) => (
-          <article className="feature-card" key={`${chord.name}-${index}`}>
-            <div className="feature-card-header">
+          <article className="legacy-catalog-card" key={`${chord.name}-${index}`}>
+            <div className="legacy-catalog-card__header">
               <div>
-                <span className="card-tag">{degrees[index]}</span>
-                <h3>{chord.name}</h3>
+                <span className="legacy-catalog-card__eyebrow">{degrees[index]}</span>
+                <h3 className="legacy-catalog-card__title">{chord.name}</h3>
               </div>
-              <button className="ghost-button" onClick={() => playChord(chord.notes)}>
+              <button className="legacy-catalog-card__action" onClick={() => playChord(chord.notes)}>
                 Play
               </button>
             </div>
-            <p className="card-copy">{analysis.functions[index]}</p>
+            <p className="legacy-catalog-card__subtitle">{analysis.functions[index]}</p>
             <NoteBadgeList notes={chord.notes} keySignature={currentKey} />
           </article>
         ))}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   playChord,
   playNote,
@@ -6,6 +6,7 @@ import {
   playRhythmPattern,
 } from "../../audio/audioEngine";
 import { useAppStore } from "../../app/store/useAppStore";
+import { useShellBridgeStore } from "../../app/store/useShellBridgeStore";
 import {
   CHORD_TEMPLATES,
   NOTES,
@@ -54,6 +55,24 @@ const TYPE_TIPS: Record<EarChallengeType, string> = {
   chord: "Major, minor, diminished, and extended colors each have a distinct tension profile.",
   melody: "Track scale-degree movement relative to the current key center instead of isolated notes.",
   rhythm: "Feel the pulse first, then compare the accent placement against the two patterns.",
+};
+
+const DIFFICULTY_LABELS: Record<EarDifficulty, string> = {
+  easy: "Beginner",
+  medium: "Intermediate",
+  hard: "Advanced",
+};
+
+const INTERVAL_LABELS: Record<IntervalDirection, string> = {
+  ascending: "Ascending",
+  descending: "Descending",
+  harmonic: "Harmonic",
+};
+
+const CHORD_POOL_LABELS: Record<ChordPool, string> = {
+  basic: "Triads",
+  seventh: "Sevenths",
+  all: "Extended",
 };
 
 function shuffle<T>(items: T[]) {
@@ -186,6 +205,7 @@ function buildEarChallenge(
 
 export function EarTrainerPage() {
   const currentKey = useAppStore((state) => state.currentKey);
+  const syncRoute = useShellBridgeStore((state) => state.syncRoute);
   const [type, setType] = useState<EarChallengeType>("note");
   const [difficulty, setDifficulty] = useState<EarDifficulty>("easy");
   const [intervalDirection, setIntervalDirection] = useState<IntervalDirection>("ascending");
@@ -197,8 +217,49 @@ export function EarTrainerPage() {
 
   const accuracy = stats.total ? Math.round((stats.correct / stats.total) * 100) : 0;
   const tip = TYPE_TIPS[type];
+  const playableLabel = useMemo(() => {
+    const level = DIFFICULTY_LABELS[difficulty];
+    if (!challenge) return `${TYPE_LABELS[type]} • ${level}`;
 
-  function replayCurrentChallenge(target = challenge) {
+    switch (challenge.payload.kind) {
+      case "note":
+        return `${TYPE_LABELS.note} • ${level} • ${challenge.answer}`;
+      case "interval":
+        return `${TYPE_LABELS.interval} • ${level} • ${INTERVAL_LABELS[challenge.payload.direction]}`;
+      case "chord":
+        return `${TYPE_LABELS.chord} • ${level} • ${CHORD_POOL_LABELS[chordPool]}`;
+      case "melody":
+        return `${TYPE_LABELS.melody} • ${level} • ${challenge.payload.notes.length} notes`;
+      case "rhythm":
+        return `${TYPE_LABELS.rhythm} • ${level} • ${challenge.payload.pattern.length}-step pattern`;
+    }
+  }, [challenge, chordPool, difficulty, type]);
+  const playableNoteSet = useMemo(() => {
+    if (!challenge) return [];
+
+    switch (challenge.payload.kind) {
+      case "note":
+      case "chord":
+      case "melody":
+        return challenge.payload.notes;
+      case "interval":
+        return [...challenge.payload.notes];
+      case "rhythm":
+        return [];
+    }
+  }, [challenge]);
+
+  const clear = useCallback(() => {
+    setType("note");
+    setDifficulty("easy");
+    setIntervalDirection("ascending");
+    setChordPool("basic");
+    setStats({ total: 0, correct: 0, streak: 0 });
+    setFeedback(null);
+    setDictationAnswer("");
+  }, []);
+
+  const replayCurrentChallenge = useCallback((target = challenge) => {
     if (!target) return;
 
     const payload = target.payload;
@@ -226,7 +287,11 @@ export function EarTrainerPage() {
     }
 
     playRhythmPattern(payload.pattern, { note: "C4", stepMs: 250, duration: 120, reset: true });
-  }
+  }, [challenge]);
+
+  const playCurrent = useCallback(() => {
+    replayCurrentChallenge();
+  }, [replayCurrentChallenge]);
 
   function createChallenge() {
     const next = buildEarChallenge(type, difficulty, currentKey, intervalDirection, chordPool);
@@ -239,6 +304,17 @@ export function EarTrainerPage() {
   useEffect(() => {
     createChallenge();
   }, [type, difficulty, intervalDirection, chordPool, currentKey]);
+
+  useEffect(() => {
+    syncRoute("ear", {
+      title: "Ear Trainer",
+      subtitle: "Adaptive pitch and interval trainer.",
+      playableLabel,
+      playableNoteSet,
+      playCurrent,
+      clear,
+    });
+  }, [clear, playCurrent, playableLabel, playableNoteSet, syncRoute]);
 
   function submitAnswer(answer: string) {
     if (!challenge) return;
@@ -265,57 +341,29 @@ export function EarTrainerPage() {
 
   return (
     <section className="page-section">
-      <div className="page-hero">
-        <div>
-          <span className="eyebrow">Source Feature</span>
-          <h1>Ear Trainer Lab</h1>
-          <p>
-            Relative-pitch drills now run from the source app. Note ID, interval ID, chord quality,
-            melodic dictation, and rhythm comparison all share the same source-side playback layer.
-          </p>
-        </div>
-        <div className="hero-actions">
-          <button className="primary-button" onClick={() => replayCurrentChallenge()}>
-            Replay
-          </button>
-          <button className="ghost-button" onClick={createChallenge}>
-            New Drill
-          </button>
-        </div>
-      </div>
-
-      <div className="summary-grid">
-        <article className="summary-card">
-          <span className="summary-label">Drill</span>
-          <h2>{TYPE_LABELS[type]}</h2>
-          <p>{challenge?.prompt ?? "Choose a challenge type to begin."}</p>
-        </article>
-
-        <article className="summary-card">
-          <span className="summary-label">Mastery Stats</span>
-          <h2>{accuracy}% accuracy</h2>
-          <div className="info-chip-row">
-            <span className="info-chip">{stats.total} total</span>
-            <span className="info-chip">{stats.correct} correct</span>
-            <span className="info-chip">{stats.streak} streak</span>
-          </div>
-        </article>
-
-        <article className="summary-card">
-          <span className="summary-label">Tip</span>
-          <h2>{TYPE_LABELS[type]}</h2>
-          <p>{tip}</p>
-        </article>
-      </div>
-
-      <article className="detail-card">
-        <div className="detail-header">
+      <article className="legacy-tool-panel">
+        <div className="legacy-tool-panel__header">
           <div>
-            <span className="summary-label">Setup</span>
-            <h2>Choose the drill shape</h2>
+            <span className="eyebrow">Ear Training</span>
+            <h1 className="legacy-tool-panel__title">Ear Trainer Lab</h1>
+            <p className="legacy-tool-panel__copy">
+              Drill controls across the top, the active listening prompt on the left, and mastery
+              stats plus tips on the right, matching the older training surface more closely.
+            </p>
+          </div>
+          <div className="legacy-toolbar-row">
+            <span className="legacy-toolbar-chip">
+              Drill <strong>{TYPE_LABELS[type]}</strong>
+            </span>
+            <span className="legacy-toolbar-chip">
+              Difficulty <strong>{DIFFICULTY_LABELS[difficulty]}</strong>
+            </span>
+            <span className="legacy-toolbar-chip">
+              Accuracy <strong>{accuracy}%</strong>
+            </span>
           </div>
         </div>
-        <div className="metronome-config-grid">
+        <div className="metronome-config-grid legacy-form-grid">
           <label className="select-field">
             <span>Challenge</span>
             <select value={type} onChange={(event) => setType(event.target.value as EarChallengeType)}>
@@ -364,67 +412,100 @@ export function EarTrainerPage() {
             </label>
           ) : null}
         </div>
-      </article>
-
-      <article className="detail-card">
-        <div className="detail-header">
-          <div>
-            <span className="summary-label">Answer</span>
-            <h2>{challenge?.prompt ?? "No challenge loaded"}</h2>
-          </div>
+        <div className="legacy-toolbar-row">
+          <button className="primary-button" onClick={() => replayCurrentChallenge()}>
+            Replay
+          </button>
+          <button className="ghost-button" onClick={createChallenge}>
+            New Drill
+          </button>
         </div>
-
-        {type === "melody" ? (
-          <div className="ear-dictation-row">
-            <input
-              className="ear-dictation-input"
-              type="text"
-              value={dictationAnswer}
-              onChange={(event) => setDictationAnswer(event.target.value)}
-              placeholder="e.g. 1-3-5"
-            />
-            <button className="primary-button" onClick={() => submitAnswer(dictationAnswer)}>
-              Check
-            </button>
-          </div>
-        ) : (
-          <div className="ear-options-grid">
-            {shuffledOptions.map((option) => (
-              <button
-                key={`${challenge?.answer}-${option}`}
-                className="finder-result-card"
-                onClick={() => submitAnswer(option)}
-              >
-                <strong>{option}</strong>
-              </button>
-            ))}
-          </div>
-        )}
-
-        {rhythmMapping ? (
-          <div className="ear-rhythm-grid">
-            {(["Pattern A", "Pattern B"] as const).map((label) => (
-              <div className="ear-rhythm-row" key={label}>
-                <strong>{label}</strong>
-                <div className="ear-rhythm-bars">
-                  {rhythmMapping[label].split("").map((value: string, index: number) => (
-                    <span
-                      key={`${label}-${index}`}
-                      className={`ear-rhythm-bar ${value === "1" ? "is-hit" : ""}`}
-                    />
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : null}
-
-        {feedback ? (
-          <div className={`ear-feedback ${feedback.ok ? "is-correct" : "is-wrong"}`}>
-            {feedback.message}
-          </div>
-        ) : null}
       </article>
+
+      <div className="legacy-lab-grid">
+        <article className="legacy-preview-panel">
+          <div className="legacy-tool-panel__header">
+          <div>
+              <span className="summary-label">Listening Prompt</span>
+              <h2>{challenge?.prompt ?? "No challenge loaded"}</h2>
+            </div>
+          </div>
+          <div className="legacy-preview-panel__meta">
+            <span className="legacy-preview-chip">{TYPE_LABELS[type]}</span>
+            <span className="legacy-preview-chip">{DIFFICULTY_LABELS[difficulty]}</span>
+            <span className="legacy-preview-chip">{stats.streak} streak</span>
+          </div>
+
+          {type === "melody" ? (
+            <div className="ear-dictation-row">
+              <input
+                className="ear-dictation-input"
+                type="text"
+                value={dictationAnswer}
+                onChange={(event) => setDictationAnswer(event.target.value)}
+                placeholder="e.g. 1-3-5"
+              />
+              <button className="primary-button" onClick={() => submitAnswer(dictationAnswer)}>
+                Check
+              </button>
+            </div>
+          ) : (
+            <div className="ear-options-grid">
+              {shuffledOptions.map((option) => (
+                <button
+                  key={`${challenge?.answer}-${option}`}
+                  className="finder-result-card"
+                  onClick={() => submitAnswer(option)}
+                >
+                  <strong>{option}</strong>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {rhythmMapping ? (
+            <div className="ear-rhythm-grid">
+              {(["Pattern A", "Pattern B"] as const).map((label) => (
+                <div className="ear-rhythm-row" key={label}>
+                  <strong>{label}</strong>
+                  <div className="ear-rhythm-bars">
+                    {rhythmMapping[label].split("").map((value: string, index: number) => (
+                      <span
+                        key={`${label}-${index}`}
+                        className={`ear-rhythm-bar ${value === "1" ? "is-hit" : ""}`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {feedback ? (
+            <div className={`ear-feedback ${feedback.ok ? "is-correct" : "is-wrong"}`}>
+              {feedback.message}
+            </div>
+          ) : null}
+        </article>
+
+        <div className="legacy-selection-strip">
+          <article className="legacy-selection-card">
+            <span className="summary-label">Mastery Stats</span>
+            <h2>{accuracy}% accuracy</h2>
+            <div className="legacy-preview-panel__meta">
+              <span className="legacy-preview-chip">{stats.total} total</span>
+              <span className="legacy-preview-chip">{stats.correct} correct</span>
+              <span className="legacy-preview-chip">{stats.streak} streak</span>
+            </div>
+          </article>
+
+          <article className="legacy-selection-card">
+            <span className="summary-label">Tip</span>
+            <h2>{TYPE_LABELS[type]}</h2>
+            <p className="legacy-catalog-card__subtitle">{tip}</p>
+          </article>
+        </div>
+      </div>
     </section>
   );
 }

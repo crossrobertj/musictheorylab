@@ -1,6 +1,7 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../../app/store/useAppStore";
+import { useShellBridgeStore } from "../../app/store/useShellBridgeStore";
 import { DrumMachinePage } from "./DrumMachinePage";
 
 const audioMocks = vi.hoisted(() => ({
@@ -17,6 +18,8 @@ describe("DrumMachinePage", () => {
   beforeEach(() => {
     audioMocks.playDrumHit.mockReset();
     audioMocks.stopAllAudio.mockReset();
+    useShellBridgeStore.getState().reset();
+    useShellBridgeStore.getState().syncRoute("drums");
     useAppStore.setState({
       currentView: "drums",
       currentKey: "C Major",
@@ -27,8 +30,15 @@ describe("DrumMachinePage", () => {
     });
   });
 
-  it("filters the library, resizes the grid for odd meters, and toggles humanize state", () => {
+  it("filters the library, resizes the grid for odd meters, toggles humanize state, and updates the shell bridge", async () => {
     const { container } = render(<DrumMachinePage />);
+
+    await waitFor(() => {
+      expect(useShellBridgeStore.getState().routeId).toBe("drums");
+      expect(useShellBridgeStore.getState().title).toBe("Drum Machine");
+      expect(useShellBridgeStore.getState().subtitle).toContain("16-step sequencing");
+      expect(useShellBridgeStore.getState().playableLabel).toContain("DM-001");
+    });
 
     fireEvent.change(screen.getByLabelText("Category"), {
       target: { value: "House" },
@@ -46,6 +56,8 @@ describe("DrumMachinePage", () => {
     expect(screen.getByRole("button", { name: "Humanize On" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+
+    expect(useShellBridgeStore.getState().playableLabel).toBe("Empty drum grid");
 
     const firstStep = container.querySelector(".drum-step");
     expect(firstStep).not.toBeNull();

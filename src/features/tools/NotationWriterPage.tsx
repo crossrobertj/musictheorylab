@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { playChord, stopAllAudio } from "../../audio/audioEngine";
 import { useAppStore } from "../../app/store/useAppStore";
+import { useShellBridgeStore } from "../../app/store/useShellBridgeStore";
 import { buildMidiFromNoteEvents, downloadMidiFile } from "../../domain/midi";
 import {
   buildPianoRollRows,
@@ -53,6 +54,7 @@ function downloadSvgAsPng(svgId: string, filename: string) {
 
 export function NotationWriterPage() {
   const tempo = useAppStore((state) => state.tempo);
+  const updateRoute = useShellBridgeStore((state) => state.updateRoute);
   const [clef, setClef] = useState<NotationClef>("treble");
   const [octave, setOctave] = useState("4");
   const [chordMode, setChordMode] = useState(false);
@@ -60,6 +62,20 @@ export function NotationWriterPage() {
   const [notationItems, setNotationItems] = useState<NotationItems>([]);
 
   const pianoRoll = useMemo(() => buildPianoRollRows(notationItems), [notationItems]);
+  const playableNoteSet = useMemo(
+    () => [...new Set(notationItems.flat())],
+    [notationItems],
+  );
+  const playableLabel = useMemo(() => {
+    const clefLabel = clef === "treble" ? "Treble clef" : "Bass clef";
+    if (notationItems.length === 0) {
+      return `${clefLabel} • empty staff`;
+    }
+
+    const beatLabel = notationItems.length === 1 ? "beat" : "beats";
+    const pitchLabel = playableNoteSet.length === 1 ? "pitch" : "pitches";
+    return `${clefLabel} • ${notationItems.length} ${beatLabel} • ${playableNoteSet.length} ${pitchLabel}`;
+  }, [clef, notationItems.length, playableNoteSet.length]);
 
   function addNote(baseNote: string) {
     const note = `${baseNote}${octave}`;
@@ -84,6 +100,22 @@ export function NotationWriterPage() {
     });
   }
 
+  function clearStaff() {
+    stopAllAudio();
+    setNotationItems([]);
+  }
+
+  useEffect(() => {
+    updateRoute("notation", {
+      title: "Notation",
+      subtitle: "Standard staff notation writer",
+      playableLabel,
+      playableNoteSet,
+      playCurrent: notationItems.length > 0 ? playNotation : null,
+      clear: clearStaff,
+    });
+  }, [notationItems, playableLabel, playableNoteSet, updateRoute, tempo]);
+
   function exportMidi() {
     const midi = buildMidiFromNoteEvents(
       notationItems.flatMap((group, index) =>
@@ -100,16 +132,29 @@ export function NotationWriterPage() {
 
   return (
     <section className="page-section">
-      <div className="page-hero">
-        <div>
-          <span className="eyebrow">Source Feature</span>
-          <h1>Notation Writer</h1>
-          <p>
-            Write simple staff passages directly in the source app, switch clefs, stack chord
-            input, export MIDI, and save the rendered staff as an image.
-          </p>
+      <article className="legacy-tool-panel">
+        <div className="legacy-tool-panel__header">
+          <div>
+            <span className="eyebrow">Performance Tool</span>
+            <h1 className="legacy-tool-panel__title">Notation Writer</h1>
+            <p className="legacy-tool-panel__copy">
+              Staff entry, clef switching, chord stacking, image export, and MIDI export in the
+              same compact reference-editor shape as the older tool.
+            </p>
+          </div>
+          <div className="legacy-toolbar-row">
+            <span className="legacy-toolbar-chip">
+              Clef <strong>{clef === "treble" ? "Treble" : "Bass"}</strong>
+            </span>
+            <span className="legacy-toolbar-chip">
+              Octave <strong>{octave}</strong>
+            </span>
+            <span className="legacy-toolbar-chip">
+              Items <strong>{notationItems.length}</strong>
+            </span>
+          </div>
         </div>
-        <div className="hero-actions">
+        <div className="legacy-toolbar-row">
           <button className="primary-button" onClick={playNotation}>
             Play Staff
           </button>
@@ -120,9 +165,10 @@ export function NotationWriterPage() {
             Export MIDI
           </button>
         </div>
-      </div>
+      </article>
 
-      <article className="detail-card">
+      <div className="legacy-lab-grid">
+      <article className="legacy-preview-panel">
         <div className="notation-toolbar">
           <div className="toolbar-cluster">
             <button className={clef === "treble" ? "secondary-button" : "ghost-button"} onClick={() => setClef("treble")}>
@@ -146,7 +192,7 @@ export function NotationWriterPage() {
             <input type="checkbox" checked={chordMode} onChange={(event) => setChordMode(event.target.checked)} />
             <span>Chord Input Mode</span>
           </label>
-          <button className="ghost-button" onClick={() => setNotationItems([])}>
+          <button className="ghost-button" onClick={clearStaff}>
             Clear Staff
           </button>
           <button className="ghost-button" onClick={() => setShowPianoRoll((current) => !current)}>
@@ -235,8 +281,9 @@ export function NotationWriterPage() {
         </div>
       </article>
 
-      <article className="detail-card">
-        <div className="detail-header">
+      <div className="legacy-selection-strip">
+      <article className="legacy-selection-card">
+        <div className="legacy-tool-panel__header">
           <div>
             <span className="summary-label">Note Input</span>
             <h2>Add notes to the staff</h2>
@@ -257,8 +304,8 @@ export function NotationWriterPage() {
       </article>
 
       {showPianoRoll ? (
-        <article className="detail-card">
-          <div className="detail-header">
+        <article className="legacy-selection-card">
+          <div className="legacy-tool-panel__header">
             <div>
               <span className="summary-label">Piano Roll</span>
               <h2>Grid Preview</h2>
@@ -280,6 +327,8 @@ export function NotationWriterPage() {
           </div>
         </article>
       ) : null}
+      </div>
+      </div>
     </section>
   );
 }

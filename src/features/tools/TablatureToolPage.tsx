@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { playNote, stopAllAudio } from "../../audio/audioEngine";
 import { useAppStore } from "../../app/store/useAppStore";
 import { useCustomInstrumentStore } from "../../app/store/useCustomInstrumentStore";
+import { useShellBridgeStore } from "../../app/store/useShellBridgeStore";
 import { InstrumentBoard } from "../../components/InstrumentBoard";
 import { NoteBadgeList } from "../../components/NoteBadgeList";
 import { findExactChordMatches, getCompatibleScalesForNoteClasses } from "../../domain/finder";
@@ -28,6 +29,9 @@ const NOTE_INPUTS = [
   ["B"],
 ];
 
+const DEFAULT_MIDI_ANALYSIS =
+  "Upload a MIDI file to inspect pitch range, chord hints, and scale candidates.";
+
 function getDefaultTargetInstrument(currentInstrument: string, availableIds: string[]) {
   if (availableIds.includes(currentInstrument)) return currentInstrument;
   if (availableIds.includes("guitar")) return "guitar";
@@ -39,9 +43,10 @@ export function TablatureToolPage() {
   const currentInstrument = useAppStore((state) => state.currentInstrument);
   const tempo = useAppStore((state) => state.tempo);
   const customInstruments = useCustomInstrumentStore((state) => state.customInstruments);
+  const updateRoute = useShellBridgeStore((state) => state.updateRoute);
   const [octave, setOctave] = useState("4");
   const [tabEvents, setTabEvents] = useState<TabEvent[]>([]);
-  const [midiAnalysis, setMidiAnalysis] = useState<string>("Upload a MIDI file to inspect pitch range, chord hints, and scale candidates.");
+  const [midiAnalysis, setMidiAnalysis] = useState<string>(DEFAULT_MIDI_ANALYSIS);
 
   const fretboardEntries = useMemo(
     () =>
@@ -70,12 +75,31 @@ export function TablatureToolPage() {
   const fretboardConfig = instrumentConfig.type === "fretboard" ? instrumentConfig : null;
   const activeNotes = tabEvents.map((event) => event.note);
   const renderedTab = useMemo(() => renderTextTab(instrumentConfig, tabEvents), [instrumentConfig, tabEvents]);
+  const playableLabel = useMemo(() => {
+    if (!fretboardConfig) {
+      return `${instrumentConfig.name} • fretted instrument required`;
+    }
+
+    if (!tabEvents.length) {
+      return `${instrumentConfig.name} • empty tab`;
+    }
+
+    const noteSummary = tabEvents
+      .slice(0, 4)
+      .map((event) => event.note)
+      .join(" • ");
+    const remainingCount = tabEvents.length - 4;
+
+    return `${instrumentConfig.name} • ${tabEvents.length} event${tabEvents.length === 1 ? "" : "s"} • ${noteSummary}${
+      remainingCount > 0 ? ` • +${remainingCount} more` : ""
+    }`;
+  }, [fretboardConfig, instrumentConfig.name, tabEvents]);
   const noteClasses = useMemo(
     () => [...new Set(tabEvents.map((event) => getNoteClass(event.note)))],
     [tabEvents],
   );
 
-  function addNote(note: string) {
+  const addNote = useCallback((note: string) => {
     if (!fretboardConfig) return;
     const mapped = findTabPositionForNote(`${note}${octave}`, fretboardConfig);
     if (!mapped) return;
@@ -83,9 +107,9 @@ export function TablatureToolPage() {
       ...current,
       { string: mapped.string, fret: mapped.fret, note: mapped.note },
     ]);
-  }
+  }, [fretboardConfig, octave]);
 
-  function addBoardNote(note: string) {
+  const addBoardNote = useCallback((note: string) => {
     if (!fretboardConfig) return;
     const mapped = findTabPositionForNote(note, fretboardConfig);
     if (!mapped) return;
@@ -93,24 +117,36 @@ export function TablatureToolPage() {
       ...current,
       { string: mapped.string, fret: mapped.fret, note: mapped.note },
     ]);
-  }
+  }, [fretboardConfig]);
 
-  function clearTab() {
+  const clearTab = useCallback(() => {
+    stopAllAudio();
     setTabEvents([]);
-  }
+  }, []);
 
-  function removeLast() {
+  const removeLast = useCallback(() => {
     setTabEvents((current) => current.slice(0, -1));
-  }
+  }, []);
 
-  function playTab() {
+  const playTab = useCallback(() => {
     stopAllAudio();
     tabEvents.forEach((event, index) => {
       window.setTimeout(() => {
         playNote(event.note, Math.max(180, (60000 / Math.max(tempo, 40)) * 0.85));
       }, index * (60000 / Math.max(tempo, 40)));
     });
-  }
+  }, [tabEvents, tempo]);
+
+  useEffect(() => {
+    updateRoute("tablature", {
+      title: "Tablature Tool",
+      subtitle: "Source-side fretboard tab builder with playback, export, and MIDI pitch analysis.",
+      playableLabel,
+      playableNoteSet: activeNotes,
+      playCurrent: playTab,
+      clear: clearTab,
+    });
+  }, [activeNotes, clearTab, playTab, playableLabel, updateRoute]);
 
   async function handleMidiUpload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -156,16 +192,17 @@ export function TablatureToolPage() {
 
   return (
     <section className="page-section">
-      <div className="page-hero">
-        <div>
-          <span className="eyebrow">Source Feature</span>
-          <h1>Tablature Tool</h1>
-          <p>
-            Build text tablature directly in the source app, map pitches to the nearest playable
-            fret positions, audition the line, and inspect imported MIDI pitch content.
-          </p>
-        </div>
-        <div className="hero-actions">
+      <div className="legacy-tool-panel">
+        <div className="legacy-tool-panel__header">
+          <div>
+            <span className="eyebrow">Fretboard Tool</span>
+            <h1 className="legacy-tool-panel__title">Tablature Tool</h1>
+            <p className="legacy-tool-panel__copy">
+              Build text tablature directly in the source app, map pitches to the nearest playable
+              fret positions, audition the line, and inspect imported MIDI pitch content.
+            </p>
+          </div>
+          <div className="hero-actions">
           <button className="primary-button" onClick={playTab}>
             Play Tab
           </button>
@@ -175,22 +212,23 @@ export function TablatureToolPage() {
           >
             Export MIDI
           </button>
+          </div>
         </div>
       </div>
 
-      <div className="summary-grid">
-        <article className="summary-card">
+      <div className="legacy-catalog-grid">
+        <article className="legacy-catalog-card">
           <span className="summary-label">Target Instrument</span>
           <h2>{instrumentConfig.name}</h2>
           <p>Only fretboard-capable instruments appear here, including saved custom ones.</p>
         </article>
-        <article className="summary-card">
+        <article className="legacy-catalog-card">
           <span className="summary-label">Tab Events</span>
           <h2>{tabEvents.length}</h2>
           <p>{tabEvents.length ? `Last note ${tabEvents[tabEvents.length - 1].note}` : "Start adding notes from the board or input buttons."}</p>
           {noteClasses.length ? <NoteBadgeList notes={noteClasses.map((note) => `${note}4`)} keySignature={currentKey} /> : null}
         </article>
-        <article className="summary-card">
+        <article className="legacy-catalog-card">
           <span className="summary-label">Actions</span>
           <h2>{tempo} BPM</h2>
           <div className="toolbar-cluster">
@@ -204,12 +242,14 @@ export function TablatureToolPage() {
         </article>
       </div>
 
-      <article className="detail-card">
-        <div className="detail-header">
+      <article className="legacy-preview-panel">
+        <div className="legacy-tool-panel__header">
           <div>
             <span className="summary-label">Input</span>
             <h2>Map notes to playable fret positions</h2>
-            <p>Click the fretboard directly or use the note buttons below to add the nearest valid tab event.</p>
+            <p className="legacy-tool-panel__copy">
+              Click the fretboard directly or use the note buttons below to add the nearest valid tab event.
+            </p>
           </div>
           <div className="production-selector-grid">
             <label className="select-field">
@@ -242,8 +282,8 @@ export function TablatureToolPage() {
         />
       </article>
 
-      <article className="detail-card">
-        <div className="detail-header">
+      <article className="legacy-selection-card">
+        <div className="legacy-tool-panel__header">
           <div>
             <span className="summary-label">Quick Notes</span>
             <h2>Add pitches without using the fretboard</h2>
@@ -267,8 +307,8 @@ export function TablatureToolPage() {
       </article>
 
       <div className="tuning-layout">
-        <article className="detail-card">
-          <div className="detail-header">
+        <article className="legacy-preview-panel">
+          <div className="legacy-tool-panel__header">
             <div>
               <span className="summary-label">Tab Output</span>
               <h2>Rendered tablature</h2>
@@ -277,8 +317,8 @@ export function TablatureToolPage() {
           <pre className="tab-preview">{renderedTab}</pre>
         </article>
 
-        <article className="detail-card">
-          <div className="detail-header">
+        <article className="legacy-selection-card">
+          <div className="legacy-tool-panel__header">
             <div>
               <span className="summary-label">MIDI Import</span>
               <h2>Pitch analysis</h2>

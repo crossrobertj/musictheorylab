@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { playNote } from "../../audio/audioEngine";
+import { useShellBridgeStore } from "../../app/store/useShellBridgeStore";
 import {
   generateQuizQuestions,
   getQuizXpPerCorrect,
@@ -41,6 +42,7 @@ function buildResult(
 }
 
 export function QuizPage() {
+  const syncRoute = useShellBridgeStore((state) => state.syncRoute);
   const [difficulty, setDifficulty] = useState<QuizDifficulty>("easy");
   const [timedMode, setTimedMode] = useState(false);
   const [started, setStarted] = useState(false);
@@ -59,6 +61,74 @@ export function QuizPage() {
     () => (activeQuestion ? getShuffledOptions(activeQuestion) : []),
     [activeQuestion],
   );
+  const clearQuiz = useCallback(() => {
+    setDifficulty("easy");
+    setTimedMode(false);
+    setStarted(false);
+    setQuestions([]);
+    setCurrentQuestion(0);
+    setScore(0);
+    setXpEarned(0);
+    setFeedback(null);
+    setTimeLeft(60);
+    setElapsedSeconds(0);
+    setInputAnswer("");
+    setResult(null);
+  }, []);
+
+  const shellState = useMemo(() => {
+    const title = "Music Theory Quiz";
+    const subtitle = "Mixed theory questions with typed answers and a 60-second mode.";
+    const difficultyLabel = difficulty.charAt(0).toUpperCase() + difficulty.slice(1);
+
+    if (result) {
+      return {
+        title,
+        subtitle,
+        playableLabel: `Result | ${result.percentage}% | ${difficultyLabel}`,
+        playableNoteSet: [],
+        playCurrent: null,
+        clear: clearQuiz,
+      };
+    }
+
+    if (started && activeQuestion) {
+      const questionLabel = timedMode
+        ? `Question ${currentQuestion + 1}+`
+        : `Question ${currentQuestion + 1} of ${questions.length}`;
+
+      return {
+        title,
+        subtitle,
+        playableLabel: `${timedMode ? "Timed" : "In progress"} | ${difficultyLabel} | ${questionLabel}`,
+        playableNoteSet: [],
+        playCurrent: null,
+        clear: clearQuiz,
+      };
+    }
+
+    return {
+      title,
+      subtitle,
+      playableLabel: `Setup | ${difficultyLabel} | ${timedMode ? "Timed" : "Untimed"}`,
+      playableNoteSet: [],
+      playCurrent: null,
+      clear: clearQuiz,
+    };
+  }, [
+    activeQuestion,
+    clearQuiz,
+    currentQuestion,
+    difficulty,
+    questions.length,
+    result,
+    started,
+    timedMode,
+  ]);
+
+  useEffect(() => {
+    syncRoute("quiz", shellState);
+  }, [shellState, syncRoute]);
 
   useEffect(() => {
     if (!started || result) return undefined;
@@ -166,25 +236,27 @@ export function QuizPage() {
 
   return (
     <section className="page-section">
-      <div className="page-hero">
-        <div>
-          <span className="eyebrow">Source Feature</span>
-          <h1>Music Theory Quiz</h1>
-          <p>
-            The quiz is now source-side. It keeps the mixed theory question bank, difficulty tiers,
-            typed answers, and 60-second timed mode from the legacy flow.
-          </p>
+      <div className="legacy-tool-panel">
+        <div className="legacy-tool-panel__header">
+          <div>
+            <span className="eyebrow">Training Drill</span>
+            <h1 className="legacy-tool-panel__title">Music Theory Quiz</h1>
+            <p className="legacy-tool-panel__copy">
+              Mixed theory questions with difficulty tiers, typed answers, and a 60-second timed
+              mode in the restored denser training layout.
+            </p>
+          </div>
         </div>
       </div>
 
       {!started && !result ? (
-        <article className="detail-card">
+        <article className="legacy-preview-panel">
           <div className="quiz-start-grid">
             <div className="quiz-start-intro">
               <h2>Test your music theory knowledge</h2>
               <p>Answer questions about scales, chords, intervals, modes, and enharmonic spelling.</p>
             </div>
-            <div className="feature-grid">
+            <div className="legacy-catalog-grid">
               {([
                 ["easy", "Easy", "10 Questions • +10 XP/ea"],
                 ["medium", "Medium", "15 Questions • +20 XP/ea"],
@@ -192,16 +264,16 @@ export function QuizPage() {
               ] as const).map(([value, label, subcopy]) => (
                 <button
                   key={value}
-                  className="feature-card quiz-launch-card"
+                  className="legacy-catalog-card quiz-launch-card"
                   onClick={() => startQuiz(value)}
                 >
-                  <div className="feature-card-header">
+                  <div className="legacy-catalog-card__header">
                     <div>
-                      <span className="card-tag">{label}</span>
-                      <h3>{label}</h3>
+                      <span className="legacy-catalog-card__eyebrow">{label}</span>
+                      <h3 className="legacy-catalog-card__title">{label}</h3>
                     </div>
                   </div>
-                  <p className="card-copy">{subcopy}</p>
+                  <p className="legacy-catalog-card__subtitle">{subcopy}</p>
                 </button>
               ))}
             </div>
@@ -218,8 +290,8 @@ export function QuizPage() {
       ) : null}
 
       {started && activeQuestion ? (
-        <article className="detail-card">
-          <div className="detail-header">
+        <article className="legacy-preview-panel">
+          <div className="legacy-tool-panel__header">
             <div>
               <span className="summary-label">
                 Question {currentQuestion + 1} of {timedMode ? "∞" : questions.length}
@@ -283,7 +355,7 @@ export function QuizPage() {
       ) : null}
 
       {result ? (
-        <article className="detail-card quiz-results-card">
+        <article className="legacy-preview-panel quiz-results-card">
           <span className="summary-label">Results</span>
           <h2>
             {result.timed

@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { playMetronomeClick, stopAllAudio } from "../../audio/audioEngine";
 import { useAppStore } from "../../app/store/useAppStore";
+import { useShellBridgeStore } from "../../app/store/useShellBridgeStore";
 
 interface MetronomePreset {
   label: string;
@@ -51,6 +52,14 @@ const METRONOME_PRESETS: MetronomePreset[] = [
   { label: "Punk 180", bpm: 180, subdivision: 4, signature: "4/4", groups: [4], tip: "Fast stamina" },
 ];
 
+const DEFAULT_TEMPO = 120;
+const DEFAULT_SUBDIVISION = 1;
+const DEFAULT_NUMERATOR = 4;
+const DEFAULT_DENOMINATOR = 4;
+const DEFAULT_ACCENT_GROUPS = [4];
+const DEFAULT_CUSTOM_SIGNATURE = "4/4";
+const DEFAULT_CUSTOM_GROUPS = "4";
+
 function normalizeAccentGroups(numerator: number, groups: number[]) {
   const parsed = groups
     .map((value) => Number.parseInt(String(value), 10))
@@ -86,14 +95,15 @@ export function MetronomePage() {
   const tempo = useAppStore((state) => state.tempo);
   const setTempo = useAppStore((state) => state.setTempo);
   const soundEnabled = useAppStore((state) => state.soundEnabled);
+  const updateRoute = useShellBridgeStore((state) => state.updateRoute);
   const [running, setRunning] = useState(false);
-  const [subdivision, setSubdivision] = useState(1);
-  const [numerator, setNumerator] = useState(4);
-  const [denominator, setDenominator] = useState(4);
-  const [accentGroups, setAccentGroups] = useState<number[]>([4]);
+  const [subdivision, setSubdivision] = useState(DEFAULT_SUBDIVISION);
+  const [numerator, setNumerator] = useState(DEFAULT_NUMERATOR);
+  const [denominator, setDenominator] = useState(DEFAULT_DENOMINATOR);
+  const [accentGroups, setAccentGroups] = useState<number[]>([...DEFAULT_ACCENT_GROUPS]);
   const [tickCount, setTickCount] = useState(0);
-  const [customSignature, setCustomSignature] = useState("4/4");
-  const [customGroups, setCustomGroups] = useState("4");
+  const [customSignature, setCustomSignature] = useState(DEFAULT_CUSTOM_SIGNATURE);
+  const [customGroups, setCustomGroups] = useState(DEFAULT_CUSTOM_GROUPS);
   const tapHistoryRef = useRef<number[]>([]);
 
   const currentSignature = `${numerator}/${denominator}`;
@@ -101,6 +111,13 @@ export function MetronomePage() {
   const accentStarts = useMemo(() => getAccentStarts(accentGroups), [accentGroups]);
   const activeBeat = Math.floor(tickCount / Math.max(1, subdivision)) % Math.max(1, numerator);
   const activeTickInBeat = tickCount % Math.max(1, subdivision);
+  const subdivisionLabel = useMemo(() => {
+    if (subdivision === 1) return "Quarter notes";
+    if (subdivision === 2) return "Eighth notes";
+    if (subdivision === 4) return "Sixteenth notes";
+    return `${subdivision}x subdivision`;
+  }, [subdivision]);
+  const playableLabel = `${tempo} BPM • ${currentSignature} • ${subdivisionLabel} • accents ${accentLabel}`;
 
   useEffect(() => {
     setCustomSignature(currentSignature);
@@ -143,13 +160,13 @@ export function MetronomePage() {
     [],
   );
 
-  function stopMetronome() {
+  const stopMetronome = useCallback(() => {
     setRunning(false);
     setTickCount(0);
     stopAllAudio();
-  }
+  }, []);
 
-  function toggleMetronome() {
+  const toggleMetronome = useCallback(() => {
     if (running) {
       stopMetronome();
       return;
@@ -157,7 +174,30 @@ export function MetronomePage() {
 
     setTickCount(0);
     setRunning(true);
-  }
+  }, [running, stopMetronome]);
+
+  const clearMetronome = useCallback(() => {
+    stopMetronome();
+    setTempo(DEFAULT_TEMPO);
+    setSubdivision(DEFAULT_SUBDIVISION);
+    setNumerator(DEFAULT_NUMERATOR);
+    setDenominator(DEFAULT_DENOMINATOR);
+    setAccentGroups([...DEFAULT_ACCENT_GROUPS]);
+    setCustomSignature(DEFAULT_CUSTOM_SIGNATURE);
+    setCustomGroups(DEFAULT_CUSTOM_GROUPS);
+    tapHistoryRef.current = [];
+  }, [setTempo, stopMetronome]);
+
+  useEffect(() => {
+    updateRoute("metronome", {
+      title: "Metronome",
+      subtitle: "High-precision practice metronome.",
+      playableLabel,
+      playableNoteSet: [],
+      playCurrent: toggleMetronome,
+      clear: clearMetronome,
+    });
+  }, [clearMetronome, playableLabel, toggleMetronome, updateRoute]);
 
   function applySignature(n: number, d: number, groups: number[]) {
     const safeNumerator = Math.max(1, Math.min(32, n));
@@ -208,16 +248,32 @@ export function MetronomePage() {
 
   return (
     <section className="page-section">
-      <div className="page-hero">
-        <div>
-          <span className="eyebrow">Source Feature</span>
-          <h1>Practice Metronome</h1>
-          <p>
-            The metronome is now source-side too. It shares the global tempo state, supports simple
-            and additive meters, and keeps accent grouping explicit instead of hiding it in the legacy runtime.
-          </p>
+      <article className="legacy-tool-panel">
+        <div className="legacy-tool-panel__header">
+          <div>
+            <span className="eyebrow">Practice Tool</span>
+            <h1 className="legacy-tool-panel__title">Practice Metronome</h1>
+            <p className="legacy-tool-panel__copy">
+              Global tempo in the shell, dense meter controls in the page body, and the same
+              start-stop plus preset flow the older tool used.
+            </p>
+          </div>
+          <div className="legacy-toolbar-row">
+            <span className="legacy-toolbar-chip">
+              Status <strong>{running ? "Running" : "Stopped"}</strong>
+            </span>
+            <span className="legacy-toolbar-chip">
+              Meter <strong>{currentSignature} meter</strong>
+            </span>
+            <span className="legacy-toolbar-chip">
+              Grouping <strong>accent {accentLabel}</strong>
+            </span>
+            <span className="legacy-toolbar-chip">
+              Audio <strong>{soundEnabled ? "On" : "Muted"}</strong>
+            </span>
+          </div>
         </div>
-        <div className="hero-actions">
+        <div className="legacy-toolbar-row">
           <button className="primary-button" onClick={toggleMetronome}>
             {running ? "Stop Metronome" : "Start Metronome"}
           </button>
@@ -225,24 +281,17 @@ export function MetronomePage() {
             Tap Tempo
           </button>
         </div>
-      </div>
+      </article>
 
-      <div className="summary-grid">
-        <article className="summary-card">
-          <span className="summary-label">Status</span>
-          <h2>{running ? "Running" : "Stopped"}</h2>
-          <div className="info-chip-row">
-            <span className="info-chip">{tempo} BPM</span>
-            <span className="info-chip">{currentSignature}</span>
-            <span className="info-chip">Grouping {accentLabel}</span>
-            <span className="info-chip">{subdivision}x subdivision</span>
+      <div className="legacy-lab-grid">
+        <article className="legacy-preview-panel">
+          <div className="legacy-tool-panel__header">
+            <div>
+              <span className="summary-label">Status</span>
+              <h2>{running ? "Running" : "Stopped"}</h2>
+              <p>Primary accents fire at each group boundary while subdivisions stay visible below.</p>
+            </div>
           </div>
-        </article>
-
-        <article className="summary-card">
-          <span className="summary-label">Accent Pattern</span>
-          <h2>{accentLabel}</h2>
-          <p>Primary accents trigger at the start of each group. Secondary beats land on the remaining beat starts.</p>
           <div
             className="pulse-strip"
             aria-hidden="true"
@@ -259,23 +308,16 @@ export function MetronomePage() {
               return <span className={classes} key={`${currentSignature}-${index}`} />;
             })}
           </div>
-        </article>
-
-        <article className="summary-card">
-          <span className="summary-label">Audio State</span>
-          <h2>{soundEnabled ? "Sound On" : "Muted"}</h2>
-          <p>The source metronome respects the global sound toggle in the toolbar and still animates visually when muted.</p>
-        </article>
-      </div>
-
-      <article className="detail-card">
-        <div className="detail-header">
-          <div>
-            <span className="summary-label">Subdivision</span>
-            <h2>Choose the click density</h2>
+          <div className="legacy-preview-panel__meta">
+            <span className="legacy-preview-chip">{tempo} BPM</span>
+            <span className="legacy-preview-chip">{currentSignature}</span>
+            <span className="legacy-preview-chip">Grouping {accentLabel}</span>
+            <span className="legacy-preview-chip">{subdivisionLabel}</span>
           </div>
-        </div>
-        <div className="segmented-button-row">
+          <div className="legacy-toolbar-row">
+            <span className="summary-label">Subdivision</span>
+          </div>
+          <div className="segmented-button-row">
           {[1, 2, 4].map((value) => (
             <button
               key={`subdivision-${value}`}
@@ -288,73 +330,85 @@ export function MetronomePage() {
               {value === 1 ? "Quarter Notes" : value === 2 ? "Eighth Notes" : "Sixteenth Notes"}
             </button>
           ))}
-        </div>
-      </article>
-
-      <article className="detail-card">
-        <div className="detail-header">
-          <div>
-            <span className="summary-label">Time Signature</span>
-            <h2>Preset and custom meters</h2>
           </div>
-        </div>
-        <div className="metronome-config-grid">
-          <label className="select-field">
-            <span>Signature presets</span>
-            <select
-              value={signatureValue(numerator, denominator, accentGroups)}
-              onChange={(event) => applySignatureSelection(event.target.value)}
-            >
-              {SIGNATURE_GROUPS.map((group) => (
-                <optgroup key={group.label} label={group.label}>
-                  {group.items.map((item) => (
-                    <option
-                      key={`${group.label}-${item.sig}-${item.groups.join("+")}`}
-                      value={`${item.sig}|${item.groups.join("+")}`}
-                    >
-                      {item.sig} ({item.groups.join("+")})
-                    </option>
+        </article>
+
+        <div className="legacy-selection-strip">
+          <article className="legacy-selection-card">
+            <span className="summary-label">Time Signature</span>
+            <div className="metronome-config-grid legacy-form-grid">
+              <label className="select-field">
+                <span>Signature presets</span>
+                <select
+                  value={signatureValue(numerator, denominator, accentGroups)}
+                  onChange={(event) => applySignatureSelection(event.target.value)}
+                >
+                  {SIGNATURE_GROUPS.map((group) => (
+                    <optgroup key={group.label} label={group.label}>
+                      {group.items.map((item) => (
+                        <option
+                          key={`${group.label}-${item.sig}-${item.groups.join("+")}`}
+                          value={`${item.sig}|${item.groups.join("+")}`}
+                        >
+                          {item.sig} ({item.groups.join("+")})
+                        </option>
+                      ))}
+                    </optgroup>
                   ))}
-                </optgroup>
-              ))}
-            </select>
-          </label>
+                </select>
+              </label>
 
-          <label className="search-field">
-            <span>Custom signature</span>
-            <input
-              type="text"
-              value={customSignature}
-              onChange={(event) => setCustomSignature(event.target.value)}
-              placeholder="13/8"
-            />
-          </label>
+              <label className="search-field">
+                <span>Custom signature</span>
+                <input
+                  type="text"
+                  value={customSignature}
+                  onChange={(event) => setCustomSignature(event.target.value)}
+                  placeholder="13/8"
+                />
+              </label>
 
-          <label className="search-field">
-            <span>Accent groups</span>
-            <input
-              type="text"
-              value={customGroups}
-              onChange={(event) => setCustomGroups(event.target.value)}
-              placeholder="3+3+2+2+3"
-            />
-          </label>
+              <label className="search-field">
+                <span>Accent groups</span>
+                <input
+                  type="text"
+                  value={customGroups}
+                  onChange={(event) => setCustomGroups(event.target.value)}
+                  placeholder="3+3+2+2+3"
+                />
+              </label>
+            </div>
+            <div className="legacy-toolbar-row">
+              <button className="ghost-button" onClick={applyCustomSignatureValue}>
+                Apply Custom Meter
+              </button>
+            </div>
+          </article>
+
+          <article className="legacy-selection-card">
+            <span className="summary-label">Current Readout</span>
+            <div className="legacy-toolbar-row">
+              <span className="legacy-preview-chip">Tempo {tempo}</span>
+              <span className="legacy-preview-chip">Meter {currentSignature}</span>
+              <span className="legacy-preview-chip">Grouping accent {accentLabel}</span>
+              <span className="legacy-preview-chip">{subdivision}x density</span>
+            </div>
+            <p className="legacy-catalog-card__subtitle">
+              The source metronome still obeys the global sound toggle in the shell while keeping
+              the visual pulse active.
+            </p>
+          </article>
         </div>
-        <div className="hero-actions">
-          <button className="ghost-button" onClick={applyCustomSignatureValue}>
-            Apply Custom Meter
-          </button>
-        </div>
-      </article>
+      </div>
 
-      <article className="detail-card">
-        <div className="detail-header">
+      <article className="legacy-tool-panel">
+        <div className="legacy-tool-panel__header">
           <div>
             <span className="summary-label">Practice Presets</span>
             <h2>Common tempo and meter combinations</h2>
           </div>
         </div>
-        <div className="preset-grid">
+        <div className="legacy-catalog-grid">
           {METRONOME_PRESETS.map((preset) => {
             const isActive =
               tempo === preset.bpm &&
@@ -365,17 +419,17 @@ export function MetronomePage() {
             return (
               <button
                 key={`${preset.label}-${preset.signature}`}
-                className={`feature-card preset-card ${isActive ? "is-selected" : ""}`}
+                className={`legacy-catalog-card preset-card ${isActive ? "is-selected" : ""}`}
                 onClick={() => applyPreset(preset)}
               >
-                <div className="feature-card-header">
+                <div className="legacy-catalog-card__header">
                   <div>
-                    <span className="card-tag">{preset.signature}</span>
-                    <h3>{preset.label}</h3>
+                    <span className="legacy-catalog-card__eyebrow">{preset.signature}</span>
+                    <h3 className="legacy-catalog-card__title">{preset.label}</h3>
                   </div>
-                  <span className="info-chip">{preset.subdivision}x</span>
+                  <span className="legacy-preview-chip">{preset.subdivision}x</span>
                 </div>
-                <p className="card-copy">{preset.tip}</p>
+                <p className="legacy-catalog-card__subtitle">{preset.tip}</p>
               </button>
             );
           })}

@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { playChord, playProgression, playScale } from "../../audio/audioEngine";
 import { KeyboardPreview } from "../../components/KeyboardPreview";
 import { NoteBadgeList } from "../../components/NoteBadgeList";
 import { useAppStore } from "../../app/store/useAppStore";
+import { useShellBridgeStore } from "../../app/store/useShellBridgeStore";
 import { ALL_SCALES } from "../../domain/generated/theory-data";
 import { MOOD_DEFINITIONS } from "../../domain/moods";
 import {
@@ -43,6 +44,7 @@ function isMinorMoodScale(scaleName: string) {
 
 export function MoodPickerPage() {
   const currentKey = useAppStore((state) => state.currentKey);
+  const updateRoute = useShellBridgeStore((state) => state.updateRoute);
   const [selectedMoodName, setSelectedMoodName] = useState(MOOD_DEFINITIONS[0]?.name ?? "");
   const selectedMood = useMemo(
     () => MOOD_DEFINITIONS.find((mood) => mood.name === selectedMoodName) ?? MOOD_DEFINITIONS[0],
@@ -76,39 +78,64 @@ export function MoodPickerPage() {
     });
   }, [scaleData, selectedMood.scale]);
 
+  const playCurrent = useCallback(() => {
+    if (!scaleData) return;
+    playScale(scaleData.notes);
+  }, [scaleData]);
+
+  const clear = useCallback(() => {
+    setSelectedMoodName(MOOD_DEFINITIONS[0]?.name ?? "");
+  }, []);
+
+  const playableLabel = selectedMood && scaleData ? `${selectedMood.name} • ${selectedMood.scale}` : "";
+
+  useEffect(() => {
+    if (!selectedMood || !scaleData) return;
+
+    updateRoute("moods", {
+      title: "Mood Picker",
+      subtitle: "Find harmony through emotion.",
+      playableLabel,
+      playableNoteSet: scaleData.notes,
+      playCurrent,
+      clear,
+    });
+  }, [clear, playCurrent, playableLabel, scaleData, selectedMood, updateRoute]);
+
   if (!selectedMood || !scaleData) {
     return null;
   }
 
   return (
     <section className="page-section">
-      <div className="page-hero">
-        <div>
-          <span className="eyebrow">Source Feature</span>
-          <h1>Mood Picker</h1>
-          <p>
-            Explore emotional palettes through scale choice, progression shape, and diatonic color.
-            The mood recommendations now run from source-side data and theory helpers.
-          </p>
+      <div className="legacy-tool-panel">
+        <div className="legacy-tool-panel__header">
+          <div>
+            <span className="eyebrow">Creative Guide</span>
+            <h1 className="legacy-tool-panel__title">Mood Picker</h1>
+            <p className="legacy-tool-panel__copy">
+              Explore emotional palettes through scale choice, progression shape, and diatonic
+              color.
+            </p>
+          </div>
         </div>
-      </div>
-
-      <div className="summary-grid">
-        <article className="summary-card">
-          <span className="summary-label">Selected Mood</span>
-          <h2>{selectedMood.name}</h2>
-          <p>{selectedMood.desc}</p>
-        </article>
-        <article className="summary-card">
-          <span className="summary-label">Suggested Scale</span>
-          <h2>{selectedMood.scale}</h2>
-          <p>{currentKey} resolves this palette into the active app key.</p>
-        </article>
-        <article className="summary-card">
-          <span className="summary-label">Suggested Progression</span>
-          <h2>{selectedMood.progression}</h2>
-          <p>Roman numerals are resolved through the same source harmony helpers as the progression tools.</p>
-        </article>
+        <div className="legacy-toolbar-row">
+          <div className="legacy-toolbar-chip">
+            Mood
+            <br />
+            <strong>{selectedMood.name}</strong>
+          </div>
+          <div className="legacy-toolbar-chip">
+            Scale
+            <br />
+            <strong>{selectedMood.scale}</strong>
+          </div>
+          <div className="legacy-toolbar-chip">
+            Progression
+            <br />
+            <strong>{selectedMood.progression}</strong>
+          </div>
+        </div>
       </div>
 
       <div className="mood-grid">
@@ -126,17 +153,17 @@ export function MoodPickerPage() {
         ))}
       </div>
 
-      <article className="detail-card">
+      <article className="legacy-preview-panel">
         <div className="detail-header">
           <div>
             <span className="summary-label">Mood Palette</span>
             <h2>
               {getRootFromKey(currentKey)} {selectedMood.scale}
             </h2>
-            <p>{scaleData.desc}</p>
+            <p className="legacy-tool-panel__copy">{scaleData.desc}</p>
           </div>
           <div className="toolbar-cluster">
-            <button className="ghost-button" onClick={() => playScale(scaleData.notes)}>
+            <button className="ghost-button" onClick={playCurrent}>
               Play Scale
             </button>
             <button
@@ -147,61 +174,73 @@ export function MoodPickerPage() {
             </button>
           </div>
         </div>
-        <div className="info-chip-row">
-          <span className="info-chip">{scaleData.region}</span>
-          <span className="info-chip">{selectedMood.progression}</span>
+        <div className="legacy-preview-panel__meta">
+          <span className="legacy-preview-chip">{scaleData.region}</span>
+          <span className="legacy-preview-chip">{selectedMood.progression}</span>
         </div>
         <NoteBadgeList notes={scaleData.notes} keySignature={currentKey} />
         <KeyboardPreview activeNotes={scaleData.notes} keySignature={currentKey} />
       </article>
 
-      <article className="detail-card">
+      <article className="legacy-tool-panel">
         <div className="detail-header">
           <div>
             <span className="summary-label">Progression Chords</span>
             <h2>{selectedMood.progression}</h2>
-            <p>Click any chord to hear the color inside the selected mood palette.</p>
+            <p className="legacy-tool-panel__copy">Click any chord to hear the color inside the selected mood palette.</p>
           </div>
         </div>
-        <div className="feature-grid">
+        <div className="legacy-catalog-grid">
           {progressionChords.map((chord, index) => (
-            <article className="feature-card" key={`${selectedMood.name}-${index}`}>
-              <div className="feature-card-header">
+            <article className="legacy-catalog-card" key={`${selectedMood.name}-${index}`}>
+              <div className="legacy-catalog-card__header">
                 <div>
-                  <span className="card-tag">{selectedMood.progression.split(" - ")[index]}</span>
-                  <h3>{chord.name}</h3>
+                  <span className="legacy-catalog-card__eyebrow">{selectedMood.progression.split(" - ")[index]}</span>
+                  <h2 className="legacy-catalog-card__title">{chord.name}</h2>
                 </div>
-                <button className="ghost-button" onClick={() => playChord(chord.notes)}>
+                <button className="legacy-catalog-card__action" onClick={() => playChord(chord.notes)}>
                   Play
                 </button>
               </div>
-              <NoteBadgeList notes={chord.notes} keySignature={currentKey} />
+              <div className="legacy-token-row">
+                {chord.notes.map((note) => (
+                  <span key={`${chord.name}-${note}`} className="legacy-note-token">
+                    {note.replace(/[0-9]/g, "")}
+                  </span>
+                ))}
+              </div>
             </article>
           ))}
         </div>
       </article>
 
-      <article className="detail-card">
+      <article className="legacy-tool-panel">
         <div className="detail-header">
           <div>
             <span className="summary-label">Degree Chords</span>
             <h2>{selectedMood.scale}</h2>
-            <p>A quick diatonic pass across the chosen mood scale.</p>
+            <p className="legacy-tool-panel__copy">A quick diatonic pass across the chosen mood scale.</p>
           </div>
         </div>
-        <div className="feature-grid">
+        <div className="legacy-catalog-grid">
           {degreeChords.map((chord, index) => (
-            <article className="feature-card" key={`${selectedMood.scale}-${index}`}>
-              <div className="feature-card-header">
+            <article className="legacy-catalog-card" key={`${selectedMood.scale}-${index}`}>
+              <div className="legacy-catalog-card__header">
                 <div>
-                  <span className="card-tag">Degree {index + 1}</span>
-                  <h3>{chord.name}</h3>
+                  <span className="legacy-catalog-card__eyebrow">Degree {index + 1}</span>
+                  <h2 className="legacy-catalog-card__title">{chord.name}</h2>
                 </div>
-                <button className="ghost-button" onClick={() => playChord(chord.notes)}>
+                <button className="legacy-catalog-card__action" onClick={() => playChord(chord.notes)}>
                   Play
                 </button>
               </div>
-              <NoteBadgeList notes={chord.notes} keySignature={currentKey} />
+              <div className="legacy-token-row">
+                {chord.notes.map((note) => (
+                  <span key={`${chord.name}-${note}`} className="legacy-note-token">
+                    {note.replace(/[0-9]/g, "")}
+                  </span>
+                ))}
+              </div>
             </article>
           ))}
         </div>

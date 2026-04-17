@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { useShellBridgeStore } from "../../app/store/useShellBridgeStore";
 import { THEORY_GUIDE_SECTIONS } from "../../domain/guide";
 
 function normalizeSearch(value: string) {
@@ -7,6 +8,7 @@ function normalizeSearch(value: string) {
 }
 
 export function TheoryGuidePage() {
+  const updateRoute = useShellBridgeStore((state) => state.updateRoute);
   const [query, setQuery] = useState("");
 
   const normalizedQuery = normalizeSearch(query);
@@ -29,20 +31,49 @@ export function TheoryGuidePage() {
   }, [normalizedQuery]);
 
   const categoryCount = new Set(THEORY_GUIDE_SECTIONS.map((section) => section.category)).size;
+  const playableLabel = normalizedQuery
+    ? `${filteredSections.length} topics for "${query.trim()}"`
+    : `${filteredSections.length} topics shown`;
+  const clear = useCallback(() => {
+    setQuery("");
+  }, []);
+
+  useEffect(() => {
+    updateRoute("guide", {
+      title: "Theory Guide",
+      subtitle: "Searchable reference for harmony, scales, and analysis.",
+      playableLabel,
+      playableNoteSet: [],
+      playCurrent: null,
+      clear,
+    });
+  }, [clear, playableLabel, updateRoute]);
 
   return (
     <section className="page-section">
-      <div className="page-hero">
-        <div>
-          <span className="eyebrow">Source Feature</span>
-          <h1>Theory Guide</h1>
-          <p>
-            The searchable reference is now source-side. It keeps the legacy guide's fundamentals,
-            harmony, analysis, and ear-training topics while making them easier to scan and route
-            into the rest of the app.
-          </p>
+      <article className="legacy-tool-panel">
+        <div className="legacy-tool-panel__header">
+          <div>
+            <span className="eyebrow">Theory Reference</span>
+            <h1 className="legacy-tool-panel__title">Theory Guide</h1>
+            <p className="legacy-tool-panel__copy">
+              Searchable fundamentals, harmony, scales, and analysis topics in the older reference
+              panel language instead of the generic source summary layout.
+            </p>
+          </div>
+          <div className="legacy-toolbar-row">
+            <span className="legacy-toolbar-chip">
+              Topics <strong>{THEORY_GUIDE_SECTIONS.length}</strong>
+            </span>
+            <span className="legacy-toolbar-chip">
+              Categories <strong>{categoryCount}</strong>
+            </span>
+            <span className="legacy-toolbar-chip">
+              Visible <strong>{filteredSections.length}</strong>
+            </span>
+          </div>
         </div>
-        <div className="hero-actions">
+        <div className="legacy-toolbar-row">
           <Link className="primary-button" to="/app/quiz">
             Open Quiz
           </Link>
@@ -53,30 +84,10 @@ export function TheoryGuidePage() {
             Interval Tool
           </Link>
         </div>
-      </div>
+      </article>
 
-      <div className="summary-grid">
-        <article className="summary-card">
-          <span className="summary-label">Reference</span>
-          <h2>{THEORY_GUIDE_SECTIONS.length} Topics</h2>
-          <p>Coverage spans notation and acoustics through cadence, substitution, and analysis workflow.</p>
-        </article>
-
-        <article className="summary-card">
-          <span className="summary-label">Categories</span>
-          <h2>{categoryCount} Lenses</h2>
-          <p>Foundations, scales, harmony, and analysis are grouped separately so search results stay readable.</p>
-        </article>
-
-        <article className="summary-card">
-          <span className="summary-label">Filter</span>
-          <h2>{filteredSections.length} Visible</h2>
-          <p>Try queries like `cadence`, `modulation`, `blues`, `tritone`, or `roman numerals`.</p>
-        </article>
-      </div>
-
-      <article className="detail-card">
-        <div className="detail-header">
+      <article className="legacy-tool-panel">
+        <div className="legacy-tool-panel__header">
           <div>
             <span className="summary-label">Search</span>
             <h2>Filter theory topics</h2>
@@ -94,20 +105,20 @@ export function TheoryGuidePage() {
         </div>
       </article>
 
-      <div className="feature-grid theory-guide-grid">
+      <div className="legacy-catalog-grid theory-guide-grid">
         {filteredSections.map((section, index) => (
           <details
             key={section.id}
-            className="feature-card theory-guide-card"
+            className="legacy-catalog-card theory-guide-card"
             open={normalizedQuery.length > 0 || index < 2}
           >
             <summary className="theory-guide-summary">
               <div>
-                <span className="card-tag">{section.category}</span>
-                <h3>{section.title}</h3>
+                <span className="legacy-catalog-card__eyebrow">{section.category}</span>
+                <h3 className="legacy-catalog-card__title">{section.title}</h3>
               </div>
             </summary>
-            <p className="card-copy">{section.core}</p>
+            <p className="legacy-catalog-card__subtitle">{section.core}</p>
             <div className="theory-guide-list-block">
               <span className="summary-label">Key Points</span>
               <ul className="theory-guide-list">
@@ -129,7 +140,7 @@ export function TheoryGuidePage() {
       </div>
 
       {filteredSections.length === 0 ? (
-        <article className="detail-card">
+        <article className="legacy-preview-panel">
           <span className="summary-label">No Matches</span>
           <h2>No theory topics matched "{query}"</h2>
           <p>Try a broader term or jump into the quiz and ear trainer from the header actions above.</p>

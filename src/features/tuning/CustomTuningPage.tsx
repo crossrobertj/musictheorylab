@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAppStore } from "../../app/store/useAppStore";
 import { useCustomInstrumentStore } from "../../app/store/useCustomInstrumentStore";
+import { useShellBridgeStore } from "../../app/store/useShellBridgeStore";
 import { InstrumentBoard } from "../../components/InstrumentBoard";
 import { NoteBadgeList } from "../../components/NoteBadgeList";
 import {
@@ -15,10 +16,13 @@ function sanitizeStrings(value: string[]) {
   return value.map((item) => item.trim()).filter(Boolean);
 }
 
+const ROUTE_ID = "customtuning";
+
 export function CustomTuningPage() {
   const currentKey = useAppStore((state) => state.currentKey);
   const currentInstrument = useAppStore((state) => state.currentInstrument);
   const setCurrentInstrument = useAppStore((state) => state.setCurrentInstrument);
+  const updateRoute = useShellBridgeStore((state) => state.updateRoute);
   const { customInstruments, saveInstrument, removeInstrument } = useCustomInstrumentStore();
 
   const sourceConfig = getInstrumentConfig(currentInstrument, customInstruments);
@@ -33,7 +37,10 @@ export function CustomTuningPage() {
     () => getInstrumentEntries(customInstruments).filter(([id]) => id.startsWith("custom-")),
     [customInstruments],
   );
-  const previewScale = getScaleNotes(currentKey);
+  const previewScale = useMemo(() => getScaleNotes(currentKey), [currentKey]);
+  const draftStrings = useMemo(() => sanitizeStrings(strings), [strings]);
+  const draftTuningLabel = draftStrings.length ? draftStrings.join(" • ") : "No open strings";
+  const playableLabel = `${name.trim() || "Custom Tuning"} • ${draftTuningLabel} • ${Math.max(5, Math.min(30, frets))} frets`;
 
   function updateString(index: number, value: string) {
     setStrings((current) => current.map((item, itemIndex) => (itemIndex === index ? value : item)));
@@ -43,17 +50,21 @@ export function CustomTuningPage() {
     setStrings((current) => [...current, "E4"]);
   }
 
-  function loadFromCurrent() {
+  const loadFromCurrent = useCallback(() => {
     const config = getInstrumentConfig(currentInstrument, customInstruments);
     const nextStrings =
       config.type === "fretboard" ? [...config.strings] : ["E2", "A2", "D3", "G3", "B3", "E4"];
     setName(`${config.name} (Custom)`);
     setFrets(config.type === "fretboard" ? config.frets ?? 12 : 12);
     setStrings(nextStrings);
-  }
+  }, [currentInstrument, customInstruments]);
+
+  const clear = useCallback(() => {
+    loadFromCurrent();
+  }, [loadFromCurrent]);
 
   function saveDraft() {
-    const nextStrings = sanitizeStrings(strings);
+    const nextStrings = draftStrings;
     if (nextStrings.length < 2) return;
 
     const instrumentId = slugifyInstrumentId(name);
@@ -68,34 +79,49 @@ export function CustomTuningPage() {
     setCurrentInstrument(instrumentId);
   }
 
+  useEffect(() => {
+    updateRoute(ROUTE_ID, {
+      title: "Custom Tuning",
+      subtitle: "Clone the current instrument, edit its tuning, and save reusable fretboard layouts.",
+      playableLabel,
+      playableNoteSet: previewScale,
+      playCurrent: null,
+      clear,
+    });
+  }, [clear, playableLabel, previewScale, updateRoute]);
+
   return (
     <section className="page-section">
-      <div className="page-hero">
-        <div>
-          <span className="eyebrow">Source Feature</span>
-          <h1>Custom Tuning Builder</h1>
-          <p>
-            Save custom fretboard layouts into the source app, switch the global instrument to that
-            layout, and use it everywhere the shared instrument board appears.
-          </p>
-        </div>
-        <div className="hero-actions">
+      <div className="legacy-tool-panel">
+        <div className="legacy-tool-panel__header">
+          <div>
+            <span className="eyebrow">Instrument Setup</span>
+            <h1 className="legacy-tool-panel__title">Custom Tuning Builder</h1>
+            <p className="legacy-tool-panel__copy">
+              Save custom fretboard layouts into the source app, switch the global instrument to
+              that layout, and use it everywhere the shared instrument board appears.
+            </p>
+          </div>
+          <div className="hero-actions">
           <button className="primary-button" onClick={saveDraft}>
             Save & Switch
           </button>
           <button className="ghost-button" onClick={loadFromCurrent}>
             Clone Current
           </button>
+          </div>
         </div>
       </div>
 
       <div className="tuning-layout">
-        <article className="detail-card">
-          <div className="detail-header">
+        <article className="legacy-preview-panel">
+          <div className="legacy-tool-panel__header">
             <div>
               <span className="summary-label">Draft</span>
               <h2>{name}</h2>
-              <p>Edit open strings and fret count, then store the layout as a reusable instrument profile.</p>
+              <p className="legacy-tool-panel__copy">
+                Edit open strings and fret count, then store the layout as a reusable instrument profile.
+              </p>
             </div>
           </div>
           <div className="song-grid song-grid--meta">
@@ -127,16 +153,18 @@ export function CustomTuningPage() {
             <button className="ghost-button" onClick={addString}>
               Add String
             </button>
-            <span className="info-chip">{sanitizeStrings(strings).length} strings</span>
+            <span className="info-chip">{draftStrings.length} strings</span>
           </div>
         </article>
 
-        <article className="detail-card">
-          <div className="detail-header">
+        <article className="legacy-selection-card">
+          <div className="legacy-tool-panel__header">
             <div>
               <span className="summary-label">Saved Custom Instruments</span>
               <h2>{customEntries.length}</h2>
-              <p>These entries persist in local storage and appear in the global instrument selector.</p>
+              <p className="legacy-tool-panel__copy">
+                These entries persist in local storage and appear in the global instrument selector.
+              </p>
             </div>
           </div>
           <div className="song-list-block">
@@ -160,12 +188,12 @@ export function CustomTuningPage() {
       </div>
 
       {currentInstrument.startsWith("custom-") ? (
-        <article className="detail-card">
-          <div className="detail-header">
+        <article className="legacy-preview-panel">
+          <div className="legacy-tool-panel__header">
             <div>
               <span className="summary-label">Current Preview</span>
               <h2>{getInstrumentConfig(currentInstrument, customInstruments).name}</h2>
-              <p>The shared instrument board is already using the saved custom layout.</p>
+              <p className="legacy-tool-panel__copy">The shared instrument board is already using the saved custom layout.</p>
             </div>
             <NoteBadgeList notes={previewScale} keySignature={currentKey} />
           </div>

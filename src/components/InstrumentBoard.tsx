@@ -1,7 +1,7 @@
 import { playNote } from "../audio/audioEngine";
 import { useCustomInstrumentStore } from "../app/store/useCustomInstrumentStore";
 import { getInstrumentConfig } from "../domain/instruments";
-import { formatNoteClass, getNoteAtFret, getNoteClass } from "../domain/music";
+import { formatNoteClass, getNoteAtFret, getNoteClass, getPitchToken, isMicrotonalNote } from "../domain/music";
 
 interface InstrumentBoardProps {
   instrumentId: string;
@@ -23,6 +23,12 @@ function buildActiveClassSet(activeNotes: string[]) {
   return new Set(activeNotes.map((note) => getNoteClass(note)));
 }
 
+function buildMicrotonalClassSet(activeNotes: string[]) {
+  return new Set(
+    activeNotes.filter((note) => isMicrotonalNote(note)).map((note) => getNoteClass(note)),
+  );
+}
+
 function handlePress(note: string, onNoteClick?: (note: string) => void) {
   playNote(note);
   onNoteClick?.(note);
@@ -30,6 +36,7 @@ function handlePress(note: string, onNoteClick?: (note: string) => void) {
 
 function PianoBoard({ activeNotes, keySignature, onNoteClick }: Omit<InstrumentBoardProps, "instrumentId">) {
   const activeClasses = buildActiveClassSet(activeNotes);
+  const microtonalClasses = buildMicrotonalClassSet(activeNotes);
   const octaves = [3, 4, 5];
 
   return (
@@ -40,10 +47,12 @@ function PianoBoard({ activeNotes, keySignature, onNoteClick }: Omit<InstrumentB
             WHITE_NOTES.map((note) => {
               const noteName = `${note}${octave}`;
               const isActive = activeClasses.has(note);
+              const isMicrotonal = microtonalClasses.has(note);
               return (
                 <button
                   key={noteName}
-                  className={`piano-key piano-key--white ${isActive ? "is-active" : ""}`}
+                  className={`piano-key piano-key--white ${isActive ? "is-active" : ""} ${isMicrotonal ? "is-microtonal" : ""}`}
+                  data-pitch-token={getPitchToken(noteName)}
                   onClick={() => handlePress(noteName, onNoteClick)}
                 >
                   <span>{formatNoteClass(note, keySignature)}</span>
@@ -57,10 +66,12 @@ function PianoBoard({ activeNotes, keySignature, onNoteClick }: Omit<InstrumentB
             BLACK_NOTES.map((blackNote) => {
               const noteName = `${blackNote.note}${octave}`;
               const isActive = activeClasses.has(blackNote.note);
+              const isMicrotonal = microtonalClasses.has(blackNote.note);
               return (
                 <button
                   key={noteName}
-                  className={`piano-key piano-key--black ${isActive ? "is-active" : ""}`}
+                  className={`piano-key piano-key--black ${isActive ? "is-active" : ""} ${isMicrotonal ? "is-microtonal" : ""}`}
+                  data-pitch-token={getPitchToken(noteName)}
                   style={{
                     left: `calc(var(--white-key-width) * ${octaveIndex * 7 + blackNote.offset + 0.72})`,
                   }}
@@ -89,6 +100,7 @@ function FretboardBoard({
 
   const displayFrets = Math.min(config.frets, 15);
   const activeClasses = buildActiveClassSet(activeNotes);
+  const microtonalClasses = buildMicrotonalClassSet(activeNotes);
   const displayStrings = [...config.strings].reverse();
 
   return (
@@ -106,10 +118,12 @@ function FretboardBoard({
                     if (!note) return null;
                     const noteClass = getNoteClass(note);
                     const isActive = activeClasses.has(noteClass);
+                    const isMicrotonal = microtonalClasses.has(noteClass);
                     return (
                       <button
                         key={`${instrumentId}-${sourceIndex}-${fret}`}
-                        className={`fret-cell ${isActive ? "is-active" : ""}`}
+                        className={`fret-cell ${isActive ? "is-active" : ""} ${isMicrotonal ? "is-microtonal" : ""}`}
+                        data-pitch-token={getPitchToken(note)}
                         onClick={() => handlePress(note, onNoteClick)}
                       >
                         <span className="fret-number">{fret}</span>

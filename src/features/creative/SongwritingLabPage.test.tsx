@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { useShellBridgeStore } from "../../app/store/useShellBridgeStore";
 import { SongwritingLabPage } from "./SongwritingLabPage";
 
 const STORAGE_KEY = "music-theory-lab-source-songwriting-v1";
@@ -20,12 +21,26 @@ vi.mock("../../app/store/useAppStore", () => ({
 describe("SongwritingLabPage", () => {
   beforeEach(() => {
     localStorage.removeItem(STORAGE_KEY);
+    useShellBridgeStore.getState().reset();
+    useShellBridgeStore.getState().syncRoute("songwriting");
     audioMocks.playNoteSequence.mockReset();
     audioMocks.playProgression.mockReset();
   });
 
   it("persists draft edits and resets back to the default songwriting state", async () => {
     render(<SongwritingLabPage />);
+
+    await waitFor(() => {
+      expect(useShellBridgeStore.getState().routeId).toBe("songwriting");
+      expect(useShellBridgeStore.getState().title).toBe("Songwriting Lab");
+      expect(useShellBridgeStore.getState().subtitle).toBe("Songwriting and lyric drafting tools.");
+      expect(useShellBridgeStore.getState().playableLabel).toBe(
+        "Untitled Song • Pop • I-V-vi-IV in C",
+      );
+      expect(useShellBridgeStore.getState().playableNoteSet.length).toBeGreaterThan(0);
+      expect(useShellBridgeStore.getState().playCurrent).toEqual(expect.any(Function));
+      expect(useShellBridgeStore.getState().clear).toEqual(expect.any(Function));
+    });
 
     fireEvent.change(screen.getByDisplayValue("Untitled Song"), {
       target: { value: "Midnight Run" },
@@ -46,6 +61,9 @@ describe("SongwritingLabPage", () => {
       expect(screen.getByDisplayValue("Untitled Song")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Verse 1" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Chorus" })).toBeInTheDocument();
+      expect(useShellBridgeStore.getState().playableLabel).toBe(
+        "Untitled Song • Pop • I-V-vi-IV in C",
+      );
     });
   });
 

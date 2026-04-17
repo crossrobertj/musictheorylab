@@ -1,15 +1,32 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { playScale } from "../../audio/audioEngine";
 import { FavoriteToggleButton } from "../../components/FavoriteToggleButton";
+import { HarmonicMatchesPanel, ScaleHarmonizationPanel } from "../../components/HarmonyPanels";
 import { NoteBadgeList } from "../../components/NoteBadgeList";
 import { KeyboardPreview } from "../../components/KeyboardPreview";
+import { useShellBridgeStore } from "../../app/store/useShellBridgeStore";
 import { useAppStore } from "../../app/store/useAppStore";
+import { getCompatibleScalesForNoteClasses } from "../../domain/finder";
 import { ALL_SCALES } from "../../domain/generated/theory-data";
-import { formatIntervals, getScalePreview, sortScales } from "../../domain/music";
+import { formatIntervals, getRootFromKey, getScalePreview, sortScales } from "../../domain/music";
+import { harmonizeScale, harmonizeScaleRows } from "../../domain/scaleBuilder";
 
 interface ScaleLibraryPageProps {
   variant: "modes" | "world";
 }
+
+const SCALE_LIBRARY_VARIANTS = {
+  modes: {
+    title: "Western & Blues",
+    subtitle: "Western modes, blues colors, and closely related scale systems.",
+    defaultScaleName: "Ionian (Major)" as keyof typeof ALL_SCALES,
+  },
+  world: {
+    title: "World Scales",
+    subtitle: "Global and regional scale systems from the legacy reference catalog.",
+    defaultScaleName: "Maqam Rast" as keyof typeof ALL_SCALES,
+  },
+} as const;
 
 function createRegionPredicate(variant: "modes" | "world") {
   const westernRegions = new Set(["Western", "Blues/Jazz", "Jazz"]);
@@ -21,9 +38,11 @@ function createRegionPredicate(variant: "modes" | "world") {
 
 export function ScaleLibraryPage({ variant }: ScaleLibraryPageProps) {
   const currentKey = useAppStore((state) => state.currentKey);
+  const updateRoute = useShellBridgeStore((state) => state.updateRoute);
+  const routeConfig = SCALE_LIBRARY_VARIANTS[variant];
   const [query, setQuery] = useState("");
   const [selectedScaleName, setSelectedScaleName] = useState<keyof typeof ALL_SCALES>(
-    variant === "modes" ? "Ionian (Major)" : "Maqam Rast",
+    routeConfig.defaultScaleName,
   );
 
   const scales = useMemo(() => {
@@ -42,10 +61,61 @@ export function ScaleLibraryPage({ variant }: ScaleLibraryPageProps) {
   }, [query, variant]);
 
   const selectedScale = ALL_SCALES[selectedScaleName];
-  const previewNotes = getScalePreview(selectedScaleName, currentKey);
+  const previewNotes = useMemo(
+    () => getScalePreview(selectedScaleName, currentKey),
+    [currentKey, selectedScaleName],
+  );
+  const root = getRootFromKey(currentKey);
+  const harmonizedChords = useMemo(
+    () => harmonizeScale(root, selectedScale.intervals),
+    [root, selectedScale.intervals],
+  );
+  const harmonizationRows = useMemo(
+    () => harmonizeScaleRows(root, selectedScale.intervals),
+    [root, selectedScale.intervals],
+  );
+  const compatibleScales = useMemo(
+    () =>
+      getCompatibleScalesForNoteClasses(
+        previewNotes,
+        8,
+      ),
+    [previewNotes],
+  );
+  const selectedPreviewLabel = `${root} ${selectedScaleName}`;
+  const playableLabel = `${selectedPreviewLabel} • ${selectedScale.region}`;
+  const playableNoteSet = previewNotes;
+  const playCurrent = useCallback(() => {
+    playScale(previewNotes);
+  }, [previewNotes]);
+  const clear = useCallback(() => {
+    setQuery("");
+    setSelectedScaleName(routeConfig.defaultScaleName);
+  }, [routeConfig.defaultScaleName]);
+
+  useEffect(() => {
+    updateRoute(variant, {
+      title: routeConfig.title,
+      subtitle: routeConfig.subtitle,
+      playableLabel,
+      playableNoteSet,
+      playCurrent,
+      clear,
+    });
+  }, [
+    clear,
+    playableLabel,
+    playableNoteSet,
+    playCurrent,
+    routeConfig.subtitle,
+    routeConfig.title,
+    updateRoute,
+    variant,
+  ]);
+
   const selectedFavorite = {
     type: "scale" as const,
-    name: `${currentKey.split(" ")[0]} ${selectedScaleName}`,
+    name: selectedPreviewLabel,
     keySignature: currentKey,
     notes: previewNotes,
     route: variant === "modes" ? "/app/modes" : "/app/world",
@@ -56,51 +126,65 @@ export function ScaleLibraryPage({ variant }: ScaleLibraryPageProps) {
 
   return (
     <section className="page-section">
-      <div className="page-hero">
-        <div>
-          <span className="eyebrow">Source Feature</span>
-          <h1>{variant === "modes" ? "Western & Blues" : "World Scales"}</h1>
-          <p>
-            Scale definitions are now source data. This view filters the extracted scale catalog
-            into a modern, searchable browser with direct audio preview.
-          </p>
+      <div className="legacy-tool-panel">
+        <div className="legacy-tool-panel__header">
+          <div>
+            <span className="eyebrow">Scale Library</span>
+            <h1 className="legacy-tool-panel__title">{routeConfig.title}</h1>
+            <p className="legacy-tool-panel__copy">
+              Browse the extracted scale catalog in the active key and audition each collection
+              without leaving the library.
+            </p>
+          </div>
+          <label className="search-field">
+            <span>Filter scales</span>
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={variant === "modes" ? "dorian, bebop, lydian..." : "maqam, raga, japanese..."}
+            />
+          </label>
         </div>
-        <label className="search-field">
-          <span>Filter scales</span>
-          <input
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={variant === "modes" ? "dorian, bebop, lydian..." : "maqam, raga, japanese..."}
-          />
-        </label>
       </div>
 
-      <article className="detail-card">
-        <div className="detail-header">
+      <article className="legacy-preview-panel">
+        <div className="legacy-tool-panel__header">
           <div>
             <span className="summary-label">Scale Preview</span>
-            <h2>
-              {currentKey.split(" ")[0]} {selectedScaleName}
-            </h2>
-            <p>{selectedScale.desc}</p>
+            <h2>{selectedPreviewLabel}</h2>
+            <p className="legacy-tool-panel__copy">{selectedScale.desc}</p>
           </div>
           <div className="toolbar-cluster">
             <FavoriteToggleButton item={selectedFavorite} />
-            <button className="primary-button" onClick={() => playScale(previewNotes)}>
+            <button className="primary-button" onClick={playCurrent}>
               Play Scale
             </button>
           </div>
         </div>
-        <div className="detail-meta">
-          <span className="info-chip">Region: {selectedScale.region}</span>
-          <span className="info-chip">Intervals: {formatIntervals(selectedScale.intervals)}</span>
+        <div className="legacy-preview-panel__meta">
+          <span className="legacy-preview-chip">Region: {selectedScale.region}</span>
+          <span className="legacy-preview-chip">Intervals: {formatIntervals(selectedScale.intervals)}</span>
         </div>
         <NoteBadgeList notes={previewNotes} keySignature={currentKey} />
         <KeyboardPreview activeNotes={previewNotes} keySignature={currentKey} />
       </article>
 
-      <div className="feature-grid">
+      <ScaleHarmonizationPanel
+        description={`${selectedScale.desc} • ${selectedScale.region}`}
+        rows={harmonizationRows}
+        scaleNotes={previewNotes}
+        title={selectedPreviewLabel}
+      />
+
+      <HarmonicMatchesPanel
+        compatibleScales={compatibleScales}
+        description={`Matches derived from ${selectedPreviewLabel}`}
+        harmonizingChords={harmonizedChords}
+        title={selectedPreviewLabel}
+      />
+
+      <div className="legacy-catalog-grid">
         {scales.map(([scaleName, scale]) => {
           const typedScaleName = scaleName as keyof typeof ALL_SCALES;
           const scaleNotes = getScalePreview(typedScaleName, currentKey);
@@ -117,17 +201,17 @@ export function ScaleLibraryPage({ variant }: ScaleLibraryPageProps) {
           return (
             <article
               key={scaleName}
-              className={`feature-card ${scaleName === selectedScaleName ? "is-selected" : ""}`}
+              className={`legacy-catalog-card ${scaleName === selectedScaleName ? "is-selected" : ""}`}
             >
-              <div className="feature-card-header">
+              <div className="legacy-catalog-card__header">
                 <div>
-                  <span className="card-tag">{scale.region}</span>
-                  <h3>{scaleName}</h3>
+                  <span className="legacy-catalog-card__eyebrow">{scale.region}</span>
+                  <h3 className="legacy-catalog-card__title">{scaleName}</h3>
                 </div>
                 <div className="toolbar-cluster">
                   <FavoriteToggleButton item={favoriteItem} />
                   <button
-                    className="ghost-button"
+                    className="legacy-catalog-card__action"
                     onClick={() => {
                       setSelectedScaleName(typedScaleName);
                       playScale(scaleNotes);
@@ -137,7 +221,7 @@ export function ScaleLibraryPage({ variant }: ScaleLibraryPageProps) {
                   </button>
                 </div>
               </div>
-              <p className="card-copy">{scale.desc}</p>
+              <p className="legacy-catalog-card__subtitle">{scale.desc}</p>
               <div className="info-chip-row">
                 <span className="info-chip">{formatIntervals(scale.intervals)}</span>
               </div>

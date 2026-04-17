@@ -1,39 +1,71 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { playScale } from "../../audio/audioEngine";
+import { useShellBridgeStore } from "../../app/store/useShellBridgeStore";
 import { KEY_OPTIONS } from "../../domain/generated/theory-data";
 import { NOTES } from "../../domain/music";
 import { analyzeModulation, buildParallelComparison } from "../../domain/modulation";
 
+const DEFAULT_FROM_KEY = "C Major";
+const DEFAULT_TO_KEY = "G Major";
+const DEFAULT_PARALLEL_ROOT = "C";
+
 export function ModulationLabPage() {
-  const [fromKey, setFromKey] = useState("C Major");
-  const [toKey, setToKey] = useState("G Major");
-  const [parallelRoot, setParallelRoot] = useState("C");
+  const updateRoute = useShellBridgeStore((state) => state.updateRoute);
+  const [fromKey, setFromKey] = useState(DEFAULT_FROM_KEY);
+  const [toKey, setToKey] = useState(DEFAULT_TO_KEY);
+  const [parallelRoot, setParallelRoot] = useState(DEFAULT_PARALLEL_ROOT);
 
   const analysis = useMemo(() => analyzeModulation(fromKey, toKey), [fromKey, toKey]);
   const parallel = useMemo(() => buildParallelComparison(parallelRoot), [parallelRoot]);
+  const playableLabel = useMemo(() => {
+    const pivotLabel = analysis.pivotChords[0]
+      ? `Pivot ${analysis.pivotChords[0].chord}`
+      : `${analysis.sharedNotes.length} shared notes`;
+
+    return `${fromKey} → ${toKey} • ${pivotLabel} • Parallel ${parallel.majorKey} / ${parallel.minorKey}`;
+  }, [analysis.pivotChords, analysis.sharedNotes.length, fromKey, parallel.majorKey, parallel.minorKey, toKey]);
+
+  const clear = useCallback(() => {
+    setFromKey(DEFAULT_FROM_KEY);
+    setToKey(DEFAULT_TO_KEY);
+    setParallelRoot(DEFAULT_PARALLEL_ROOT);
+  }, []);
+
+  useEffect(() => {
+    updateRoute("modulate", {
+      title: "Modulation Lab",
+      subtitle: "Find pivot chords and compare parallel keys.",
+      playableLabel,
+      playableNoteSet: [],
+      playCurrent: null,
+      clear,
+    });
+  }, [clear, playableLabel, updateRoute]);
 
   return (
     <section className="page-section">
-      <div className="page-hero">
-        <div>
-          <span className="eyebrow">Source Feature</span>
-          <h1>Modulation Lab</h1>
-          <p>
-            Compare key centers, identify pivot chords, and inspect parallel major/minor systems
-            without falling back to the legacy modulation panel.
-          </p>
+      <div className="legacy-tool-panel">
+        <div className="legacy-tool-panel__header">
+          <div>
+            <span className="eyebrow">Key Modulation</span>
+            <h1 className="legacy-tool-panel__title">Modulation Lab</h1>
+            <p className="legacy-tool-panel__copy">
+              Compare key centers, identify pivot chords, and inspect parallel major and minor
+              systems in a denser legacy-style analysis layout.
+            </p>
+          </div>
         </div>
       </div>
 
-      <div className="summary-grid">
-        <article className="summary-card">
+      <div className="legacy-catalog-grid">
+        <article className="legacy-catalog-card">
           <span className="summary-label">Key Motion</span>
           <h2>
             {fromKey} → {toKey}
           </h2>
           <p>{analysis.semitoneDistance} semitone steps between roots.</p>
         </article>
-        <article className="summary-card">
+        <article className="legacy-catalog-card">
           <span className="summary-label">Shared Notes</span>
           <h2>{analysis.sharedNotes.length}</h2>
           <div className="info-chip-row">
@@ -44,7 +76,7 @@ export function ModulationLabPage() {
             ))}
           </div>
         </article>
-        <article className="summary-card">
+        <article className="legacy-catalog-card">
           <span className="summary-label">Pivot Chords</span>
           <h2>{analysis.pivotChords.length}</h2>
           <p>
@@ -55,8 +87,8 @@ export function ModulationLabPage() {
         </article>
       </div>
 
-      <article className="detail-card">
-        <div className="detail-header">
+      <article className="legacy-tool-panel">
+        <div className="legacy-tool-panel__header">
           <div>
             <span className="summary-label">Modulation Finder</span>
             <h2>Find common-tone routes</h2>
@@ -85,11 +117,11 @@ export function ModulationLabPage() {
           </div>
         </div>
 
-        <div className="feature-grid">
-          <article className="feature-card">
-            <span className="card-tag">Shared Collection</span>
-            <h3>{analysis.sharedNotes.join(" • ") || "No direct overlap"}</h3>
-            <p className="card-copy">
+        <div className="legacy-catalog-grid">
+          <article className="legacy-catalog-card">
+            <span className="legacy-catalog-card__eyebrow">Shared Collection</span>
+            <h3 className="legacy-catalog-card__title">{analysis.sharedNotes.join(" • ") || "No direct overlap"}</h3>
+            <p className="legacy-catalog-card__subtitle">
               This is the raw note-level overlap between the two scales before harmonic function is considered.
             </p>
             <div className="feature-card-footer">
@@ -102,14 +134,14 @@ export function ModulationLabPage() {
             </div>
           </article>
 
-          <article className="feature-card">
-            <span className="card-tag">Suggested Path</span>
-            <h3>
+          <article className="legacy-catalog-card">
+            <span className="legacy-catalog-card__eyebrow">Suggested Path</span>
+            <h3 className="legacy-catalog-card__title">
               {analysis.pivotChords[0]
                 ? `${analysis.pivotChords[0].chord}: ${analysis.pivotChords[0].fromDegree} → ${analysis.pivotChords[0].toDegree}`
                 : `Direct shift from ${fromKey} to ${toKey}`}
             </h3>
-            <p className="card-copy">
+            <p className="legacy-catalog-card__subtitle">
               Start on the source tonic, reinterpret the pivot chord in the destination key, then confirm the new tonic.
             </p>
           </article>
@@ -130,12 +162,14 @@ export function ModulationLabPage() {
         </div>
       </article>
 
-      <article className="detail-card">
-        <div className="detail-header">
+      <article className="legacy-tool-panel">
+        <div className="legacy-tool-panel__header">
           <div>
             <span className="summary-label">Parallel Comparison</span>
             <h2>Major and minor built on the same root</h2>
-            <p>Compare the pitch and chord changes that happen when you keep the tonic but switch mode.</p>
+            <p className="legacy-tool-panel__copy">
+              Compare the pitch and chord changes that happen when you keep the tonic but switch mode.
+            </p>
           </div>
           <label className="select-field">
             <span>Root</span>
@@ -149,10 +183,10 @@ export function ModulationLabPage() {
           </label>
         </div>
 
-        <div className="feature-grid">
-          <article className="feature-card">
-            <span className="card-tag">Major</span>
-            <h3>{parallel.majorKey}</h3>
+        <div className="legacy-catalog-grid">
+          <article className="legacy-catalog-card">
+            <span className="legacy-catalog-card__eyebrow">Major</span>
+            <h3 className="legacy-catalog-card__title">{parallel.majorKey}</h3>
             <div className="info-chip-row">
               {parallel.majorScale.map((note) => (
                 <span key={`${parallel.majorKey}-${note}`} className="info-chip">
@@ -174,9 +208,9 @@ export function ModulationLabPage() {
             </div>
           </article>
 
-          <article className="feature-card">
-            <span className="card-tag">Minor</span>
-            <h3>{parallel.minorKey}</h3>
+          <article className="legacy-catalog-card">
+            <span className="legacy-catalog-card__eyebrow">Minor</span>
+            <h3 className="legacy-catalog-card__title">{parallel.minorKey}</h3>
             <div className="info-chip-row">
               {parallel.minorScale.map((note) => (
                 <span key={`${parallel.minorKey}-${note}`} className="info-chip">

@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { playChord, playProgression, playScale } from "../../audio/audioEngine";
 import { KeyboardPreview } from "../../components/KeyboardPreview";
 import { NoteBadgeList } from "../../components/NoteBadgeList";
 import { useAppStore } from "../../app/store/useAppStore";
+import { useShellBridgeStore } from "../../app/store/useShellBridgeStore";
 import {
   ALL_SCALES,
   CHORD_TEMPLATES,
@@ -12,6 +13,10 @@ import { buildChordFromRootAndQuality, getNotesFromIntervals, getProgressionPrev
 
 type GenreEntry = (typeof GENRE_LIBRARY)[number];
 type SubgenreEntry = GenreEntry["subgenres"][number];
+
+const ROUTE_ID = "genres";
+const DEFAULT_GENRE = GENRE_LIBRARY[0] ?? null;
+const DEFAULT_SUBGENRE = DEFAULT_GENRE?.subgenres[0] ?? null;
 
 interface GenrePreview {
   type: "scale" | "chord" | "progression";
@@ -105,6 +110,7 @@ function buildInitialPreview(subgenre: SubgenreEntry, keySignature: string): Gen
 
 export function GenreExplorerPage() {
   const currentKey = useAppStore((state) => state.currentKey);
+  const updateRoute = useShellBridgeStore((state) => state.updateRoute);
   const [genreName, setGenreName] = useState<string>(GENRE_LIBRARY[0]?.genre ?? "");
   const activeGenre = useMemo(
     () => GENRE_LIBRARY.find((genre) => genre.genre === genreName) ?? GENRE_LIBRARY[0],
@@ -118,6 +124,10 @@ export function GenreExplorerPage() {
     [activeGenre, subgenreName],
   );
   const [preview, setPreview] = useState<GenrePreview | null>(null);
+  const initialPreview = useMemo(
+    () => (activeSubgenre ? buildInitialPreview(activeSubgenre, currentKey) : null),
+    [activeSubgenre, currentKey],
+  );
 
   useEffect(() => {
     if (!activeGenre) return;
@@ -131,57 +141,120 @@ export function GenreExplorerPage() {
     setPreview(buildInitialPreview(activeSubgenre, currentKey));
   }, [activeSubgenre, currentKey]);
 
+  const playableLabel = preview
+    ? `${preview.type[0].toUpperCase()}${preview.type.slice(1)} • ${preview.name} • ${activeSubgenre?.name ?? ""}`
+    : `${activeGenre?.genre ?? "Genre Explorer"} • ${activeSubgenre?.name ?? ""}`;
+  const playableNoteSet = useMemo(() => {
+    if (!preview) return initialPreview?.notes ?? [];
+    if (preview.type !== "progression") return preview.notes;
+
+    const progression = activeSubgenre?.progressions.find((entry) => entry.name === preview.name);
+    if (!progression) return preview.notes;
+
+    return Array.from(
+      new Set(
+        getProgressionPreview(progression.name, currentKey).flatMap((chord) => chord.notes),
+      ),
+    );
+  }, [activeSubgenre, currentKey, initialPreview?.notes, preview]);
+
+  const playCurrent = useCallback(() => {
+    if (!preview) {
+      if (initialPreview?.notes.length) {
+        playScale(initialPreview.notes);
+      }
+      return;
+    }
+
+    if (preview.type === "scale") {
+      playScale(preview.notes);
+      return;
+    }
+
+    if (preview.type === "chord") {
+      playChord(preview.notes);
+      return;
+    }
+
+    playProgression(getProgressionPreview(preview.name, currentKey).map((chord) => chord.notes));
+  }, [currentKey, initialPreview?.notes, preview]);
+
+  const clear = useCallback(() => {
+    if (DEFAULT_GENRE) {
+      setGenreName(DEFAULT_GENRE.genre);
+    }
+    if (DEFAULT_SUBGENRE) {
+      setSubgenreName(DEFAULT_SUBGENRE.name);
+      setPreview(buildInitialPreview(DEFAULT_SUBGENRE, currentKey));
+    } else {
+      setPreview(null);
+    }
+  }, [currentKey]);
+
+  useEffect(() => {
+    updateRoute(ROUTE_ID, {
+      title: "Genre Explorer",
+      subtitle: "The DNA of global musical genres.",
+      playableLabel,
+      playableNoteSet,
+      playCurrent,
+      clear,
+    });
+  }, [clear, playCurrent, playableLabel, playableNoteSet, updateRoute]);
+
   if (!activeGenre || !activeSubgenre) {
     return null;
   }
 
   return (
     <section className="page-section">
-      <div className="page-hero">
-        <div>
-          <span className="eyebrow">Source Feature</span>
-          <h1>Genre Explorer</h1>
-          <p>
-            Browse the extracted genre DNA library as real source data. Each subgenre surfaces
-            typical scales, harmonic language, and progression blueprints in the current key.
-          </p>
+      <div className="legacy-tool-panel">
+        <div className="legacy-tool-panel__header">
+          <div>
+            <span className="eyebrow">Style Explorer</span>
+            <h1 className="legacy-tool-panel__title">Genre Explorer</h1>
+            <p className="legacy-tool-panel__copy">
+              Browse the extracted genre DNA library as real source data. Each subgenre surfaces
+              typical scales, harmonic language, and progression blueprints in the current key.
+            </p>
+          </div>
+          <label className="select-field">
+            <span>Main Category</span>
+            <select value={genreName} onChange={(event) => setGenreName(event.target.value)}>
+              {GENRE_LIBRARY.map((genre) => (
+                <option key={genre.genre} value={genre.genre}>
+                  {genre.icon} {genre.genre}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
-        <label className="select-field">
-          <span>Main Category</span>
-          <select value={genreName} onChange={(event) => setGenreName(event.target.value)}>
-            {GENRE_LIBRARY.map((genre) => (
-              <option key={genre.genre} value={genre.genre}>
-                {genre.icon} {genre.genre}
-              </option>
-            ))}
-          </select>
-        </label>
+
+        <div className="legacy-toolbar-row">
+          <div className="legacy-toolbar-chip">
+            Category
+            <br />
+            <strong>{activeGenre.genre}</strong>
+          </div>
+          <div className="legacy-toolbar-chip">
+            Subgenre
+            <br />
+            <strong>{activeSubgenre.name}</strong>
+          </div>
+          <div className="legacy-toolbar-chip">
+            Key
+            <br />
+            <strong>{currentKey}</strong>
+          </div>
+        </div>
       </div>
 
-      <div className="summary-grid">
-        <article className="summary-card">
-          <span className="summary-label">Category</span>
-          <h2>{activeGenre.genre}</h2>
-          <p>{activeGenre.subgenres.length} extracted subgenres in this family.</p>
-        </article>
-        <article className="summary-card">
-          <span className="summary-label">Subgenre</span>
-          <h2>{activeSubgenre.name}</h2>
-          <p>{activeSubgenre.desc}</p>
-        </article>
-        <article className="summary-card">
-          <span className="summary-label">Current Key</span>
-          <h2>{currentKey}</h2>
-          <p>All previews resolve against the active key root instead of hard-coded examples.</p>
-        </article>
-      </div>
-
-      <article className="detail-card">
+      <article className="legacy-tool-panel">
         <div className="detail-header">
           <div>
             <span className="summary-label">Subgenres</span>
             <h2>{activeGenre.genre}</h2>
-            <p>Switch the subgenre to refresh its scale, chord, and progression palette.</p>
+            <p className="legacy-tool-panel__copy">Switch the subgenre to refresh its scale, chord, and progression palette.</p>
           </div>
         </div>
         <div className="genre-subgenre-strip">
@@ -200,29 +273,29 @@ export function GenreExplorerPage() {
         </div>
       </article>
 
-      <article className="detail-card">
+      <article className="legacy-tool-panel">
         <div className="detail-header">
           <div>
             <span className="summary-label">Palette</span>
             <h2>{activeSubgenre.name}</h2>
-            <p>{activeSubgenre.desc}</p>
+            <p className="legacy-tool-panel__copy">{activeSubgenre.desc}</p>
           </div>
           {preview ? <NoteBadgeList notes={preview.notes} keySignature={currentKey} /> : null}
         </div>
 
-        <div className="feature-grid genre-palette-grid">
-          <article className="feature-card">
-            <div className="feature-card-header">
+        <div className="legacy-catalog-grid genre-palette-grid">
+          <article className="legacy-catalog-card">
+            <div className="legacy-catalog-card__header">
               <div>
-                <span className="card-tag">Typical Scales</span>
-                <h3>{activeSubgenre.scales.length} options</h3>
+                <span className="legacy-catalog-card__eyebrow">Typical Scales</span>
+                <h2 className="legacy-catalog-card__title">{activeSubgenre.scales.length} options</h2>
               </div>
             </div>
             <div className="toolbar-cluster">
               {activeSubgenre.scales.map((scaleName) => (
                 <button
                   key={`${activeSubgenre.name}-scale-${scaleName}`}
-                  className="ghost-button"
+                  className="legacy-catalog-card__action"
                   onClick={() => {
                     const resolved = resolveScaleNotes(scaleName, currentKey);
                     if (!resolved) return;
@@ -241,18 +314,18 @@ export function GenreExplorerPage() {
             </div>
           </article>
 
-          <article className="feature-card">
-            <div className="feature-card-header">
+          <article className="legacy-catalog-card">
+            <div className="legacy-catalog-card__header">
               <div>
-                <span className="card-tag">Harmonic Language</span>
-                <h3>{activeSubgenre.chords.length} chord colors</h3>
+                <span className="legacy-catalog-card__eyebrow">Harmonic Language</span>
+                <h2 className="legacy-catalog-card__title">{activeSubgenre.chords.length} chord colors</h2>
               </div>
             </div>
             <div className="toolbar-cluster">
               {activeSubgenre.chords.map((quality) => (
                 <button
                   key={`${activeSubgenre.name}-chord-${quality}`}
-                  className="ghost-button"
+                  className="legacy-catalog-card__action"
                   onClick={() => {
                     const resolved = resolveChordNotes(quality, currentKey);
                     if (!resolved) return;
@@ -273,18 +346,19 @@ export function GenreExplorerPage() {
         </div>
       </article>
 
-      <div className="feature-grid">
+      <div className="legacy-catalog-grid">
         {activeSubgenre.progressions.map((progression) => {
           const resolved = getProgressionPreview(progression.name, currentKey);
           return (
-            <article key={`${activeSubgenre.name}-${progression.name}`} className="feature-card">
-              <div className="feature-card-header">
+            <article key={`${activeSubgenre.name}-${progression.name}`} className="legacy-catalog-card">
+              <div className="legacy-catalog-card__header">
                 <div>
-                  <span className="card-tag">Progression Blueprint</span>
-                  <h3>{progression.name}</h3>
+                  <span className="legacy-catalog-card__eyebrow">Progression Blueprint</span>
+                  <h2 className="legacy-catalog-card__title">{progression.name}</h2>
+                  <div className="legacy-catalog-card__subtitle">{progression.desc}</div>
                 </div>
                 <button
-                  className="ghost-button"
+                  className="legacy-catalog-card__action"
                   onClick={() => {
                     setPreview({
                       type: "progression",
@@ -299,10 +373,9 @@ export function GenreExplorerPage() {
                   Play
                 </button>
               </div>
-              <p className="card-copy">{progression.desc}</p>
-              <div className="scale-strip">
+              <div className="legacy-token-row">
                 {progression.numerals.map((numeral) => (
-                  <span key={`${progression.name}-${numeral}`} className="scale-token">
+                  <span key={`${progression.name}-${numeral}`} className="legacy-note-token">
                     {numeral}
                   </span>
                 ))}
@@ -313,16 +386,16 @@ export function GenreExplorerPage() {
       </div>
 
       {preview ? (
-        <article className="detail-card">
+        <article className="legacy-preview-panel">
           <div className="detail-header">
             <div>
               <span className="summary-label">Preview</span>
               <h2>{preview.name}</h2>
-              <p>{preview.detail}</p>
+              <p className="legacy-tool-panel__copy">{preview.detail}</p>
             </div>
-            <div className="info-chip-row">
-              <span className="info-chip">{preview.type}</span>
-              {preview.numerals ? <span className="info-chip">{preview.numerals.join(" - ")}</span> : null}
+            <div className="legacy-preview-panel__meta">
+              <span className="legacy-preview-chip">{preview.type}</span>
+              {preview.numerals ? <span className="legacy-preview-chip">{preview.numerals.join(" - ")}</span> : null}
             </div>
           </div>
           <NoteBadgeList notes={preview.notes} keySignature={currentKey} />

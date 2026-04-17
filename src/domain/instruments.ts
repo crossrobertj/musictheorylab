@@ -15,6 +15,11 @@ export interface FretboardInstrumentConfig {
 
 export type InstrumentConfig = PianoInstrumentConfig | FretboardInstrumentConfig;
 
+export interface InstrumentGroup {
+  label: string;
+  entries: [string, InstrumentConfig][];
+}
+
 export function getDefaultInstrumentConfigs(): Record<string, InstrumentConfig> {
   return INSTRUMENT_CONFIGS as unknown as Record<string, InstrumentConfig>;
 }
@@ -36,6 +41,51 @@ export function getInstrumentConfig(
 
 export function getInstrumentEntries(customInstruments: Record<string, InstrumentConfig> = {}) {
   return Object.entries(mergeInstrumentConfigs(customInstruments));
+}
+
+export function getGroupedInstrumentEntries(
+  customInstruments: Record<string, InstrumentConfig> = {},
+): InstrumentGroup[] {
+  const groupedEntries = new Map<string, [string, InstrumentConfig][]>();
+
+  getInstrumentEntries(customInstruments).forEach((entry) => {
+    const [instrumentId] = entry;
+    const groupLabel = instrumentId.startsWith("custom-")
+      ? "Custom"
+      : instrumentId === "piano"
+        ? "Keyboards"
+        : instrumentId.startsWith("guitar")
+          ? "Guitars"
+          : instrumentId.startsWith("bass")
+            ? "Bass"
+            : ["ukulele", "banjo5", "mandolin"].includes(instrumentId)
+              ? "Folk & Acoustic"
+              : ["violin", "viola", "cello", "doublebass"].includes(instrumentId)
+                ? "Orchestral Strings"
+                : "World Instruments";
+    const currentGroup = groupedEntries.get(groupLabel) ?? [];
+    currentGroup.push(entry);
+    groupedEntries.set(groupLabel, currentGroup);
+  });
+
+  const groupOrder = [
+    "Keyboards",
+    "Guitars",
+    "Bass",
+    "Folk & Acoustic",
+    "Orchestral Strings",
+    "World Instruments",
+    "Custom",
+  ];
+
+  return groupOrder
+    .map((label) => ({
+      label,
+      entries: (groupedEntries.get(label) ?? []).slice().sort((left, right) =>
+        left[1].name.localeCompare(right[1].name),
+      ),
+    }))
+    .filter((group) => group.entries.length > 0);
 }
 
 export function slugifyInstrumentId(label: string) {

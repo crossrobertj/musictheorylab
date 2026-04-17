@@ -1,5 +1,6 @@
-import { useMemo } from "react";
-import { playChord } from "../../audio/audioEngine";
+import { useCallback, useEffect, useMemo } from "react";
+import { playChord, playScale } from "../../audio/audioEngine";
+import { useShellBridgeStore } from "../../app/store/useShellBridgeStore";
 import { InstrumentBoard } from "../../components/InstrumentBoard";
 import { NoteBadgeList } from "../../components/NoteBadgeList";
 import { useAppStore } from "../../app/store/useAppStore";
@@ -15,6 +16,9 @@ import {
   getRelativeKey,
   getScaleNotes,
 } from "../../domain/music";
+
+const ROUTE_ID = "circle";
+const DEFAULT_CIRCLE_KEY = "C Major";
 
 const RING_POSITIONS = [
   { x: 50, y: 4 },
@@ -57,6 +61,7 @@ export function CircleOfFifthsPage() {
   const currentInstrument = useAppStore((state) => state.currentInstrument);
   const customInstruments = useCustomInstrumentStore((state) => state.customInstruments);
   const setCurrentKey = useAppStore((state) => state.setCurrentKey);
+  const updateRoute = useShellBridgeStore((state) => state.updateRoute);
 
   const currentScale = useMemo(() => getScaleNotes(currentKey), [currentKey]);
   const triads = useMemo(() => getDiatonicTriads(currentKey), [currentKey]);
@@ -65,142 +70,156 @@ export function CircleOfFifthsPage() {
   const neighbors = useMemo(() => getCircleNeighbors(currentKey), [currentKey]);
   const relativeDistance = useMemo(() => calculateKeyDistance(currentKey, relativeKey), [currentKey, relativeKey]);
   const currentInstrumentConfig = getInstrumentConfig(currentInstrument, customInstruments);
+  const playableLabel = `${currentKey} scale`;
+
+  const playCurrent = useCallback(() => {
+    void playScale(currentScale);
+  }, [currentScale]);
+
+  const clear = useCallback(() => {
+    setCurrentKey(DEFAULT_CIRCLE_KEY);
+  }, [setCurrentKey]);
+
+  useEffect(() => {
+    updateRoute(ROUTE_ID, {
+      title: "Circle of Fifths",
+      subtitle: "Harmonic proximity and key relationships.",
+      playableLabel,
+      playableNoteSet: currentScale,
+      playCurrent,
+      clear,
+    });
+  }, [clear, currentScale, playableLabel, playCurrent, updateRoute]);
 
   return (
     <section className="page-section">
-      <div className="page-hero">
-        <div>
-          <span className="eyebrow">Source Feature</span>
-          <h1>Circle of Fifths</h1>
-          <p>
-            The circle route is now source-side. Select major or minor keys from the wheel, inspect
-            their closest relationships, and audition the diatonic triads without leaving the React app.
-          </p>
+      <div className="legacy-tool-panel">
+        <div className="legacy-tool-panel__header">
+          <div>
+            <span className="eyebrow">Key Map</span>
+            <h1 className="legacy-tool-panel__title">Circle of Fifths</h1>
+            <p className="legacy-tool-panel__copy">
+              Select major or minor keys from the wheel, inspect their closest relationships, and
+              audition the diatonic triads in the current context.
+            </p>
+          </div>
         </div>
       </div>
 
-      <div className="summary-grid">
-        <article className="summary-card">
-          <span className="summary-label">Current Key</span>
-          <h2>{currentKey}</h2>
-          <NoteBadgeList notes={currentScale} keySignature={currentKey} />
-        </article>
+      <div className="legacy-map-grid">
+        <article className="legacy-map-panel">
+          <div className="detail-header">
+            <div>
+              <span className="summary-label">GPS</span>
+              <h2>{currentKey}</h2>
+              <p className="legacy-tool-panel__copy">Outer ring is major. Inner ring is minor.</p>
+            </div>
+            <div className="legacy-preview-panel__meta">
+              <span className="legacy-preview-chip">Relative: {relativeKey}</span>
+              <span className="legacy-preview-chip">Parallel: {parallelKey}</span>
+            </div>
+          </div>
+          <div className="circle-wheel">
+            <div className="circle-wheel-ring circle-wheel-ring--outer" />
+            <div className="circle-wheel-ring circle-wheel-ring--inner" />
 
-        <article className="summary-card">
-          <span className="summary-label">Related Keys</span>
-          <h2>Closest moves</h2>
-          <div className="finder-results-list">
-            {[currentKey, relativeKey, parallelKey, ...neighbors].map((keyName) => (
-              <button
-                key={`${currentKey}-${keyName}`}
-                className="finder-result-card"
-                onClick={() => setCurrentKey(keyName)}
-              >
-                <strong>{keyName}</strong>
-                <small>
-                  {keyName === currentKey
-                    ? "Tonic"
-                    : keyName === relativeKey
-                      ? "Relative"
-                      : keyName === parallelKey
-                        ? "Parallel"
-                        : "Neighboring fifth"}
-                </small>
-              </button>
+            {CIRCLE_MAJOR_KEYS.map((root, index) => (
+              <CircleNode
+                key={`major-${root}`}
+                label={root}
+                kind="major"
+                active={currentKey === `${root} Major`}
+                x={RING_POSITIONS[index].x}
+                y={RING_POSITIONS[index].y}
+                onClick={() => setCurrentKey(`${root} Major`)}
+              />
+            ))}
+
+            {CIRCLE_MINOR_KEYS.map((root, index) => (
+              <CircleNode
+                key={`minor-${root}`}
+                label={root}
+                kind="minor"
+                active={currentKey === `${root} Minor`}
+                x={50 + (RING_POSITIONS[index].x - 50) * 0.68}
+                y={50 + (RING_POSITIONS[index].y - 50) * 0.68}
+                onClick={() => setCurrentKey(`${root} Minor`)}
+              />
             ))}
           </div>
+
+          <div className="legacy-token-row">
+            <span className="legacy-note-token">Tonic</span>
+            <span className="legacy-note-token">IV / V</span>
+            <span className="legacy-note-token">Relative</span>
+            <span className="legacy-note-token">Parallel</span>
+          </div>
         </article>
 
-        <article className="summary-card">
-          <span className="summary-label">Distance Snapshot</span>
-          <h2>{relativeDistance.relationship.name}</h2>
-          <p>{relativeDistance.relationship.desc}</p>
-          <div className="info-chip-row">
-            <span className="info-chip">Relative key: {relativeKey}</span>
-            <span className="info-chip">Shared notes: {relativeDistance.sharedNotes.length}</span>
+        <article className="legacy-connection-panel">
+          <div className="detail-header">
+            <div>
+              <span className="summary-label">Pathways</span>
+              <h2>{currentKey}</h2>
+              <p className="legacy-tool-panel__copy">{relativeDistance.relationship.desc}</p>
+            </div>
+            <button className="legacy-catalog-card__action" onClick={playCurrent}>
+              Play Scale
+            </button>
           </div>
+
+          <div className="legacy-selection-strip">
+            <div className="legacy-selection-card">
+              <span className="summary-label">Closest Moves</span>
+              <div className="legacy-token-row">
+                {[currentKey, relativeKey, parallelKey, ...neighbors].map((keyName) => (
+                  <button
+                    key={`${currentKey}-${keyName}`}
+                    className="harmony-chip harmony-chip--scale"
+                    onClick={() => setCurrentKey(keyName)}
+                    type="button"
+                  >
+                    {keyName}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="legacy-selection-card">
+              <span className="summary-label">Distance Snapshot</span>
+              <h3 className="legacy-selection-card__title">{relativeDistance.relationship.name}</h3>
+              <div className="legacy-preview-panel__meta">
+                <span className="legacy-preview-chip">Relative key: {relativeKey}</span>
+                <span className="legacy-preview-chip">Shared notes: {relativeDistance.sharedNotes.length}</span>
+                <span className="legacy-preview-chip">{currentInstrumentConfig.name}</span>
+              </div>
+              <NoteBadgeList notes={currentScale} keySignature={currentKey} />
+            </div>
+
+            <div className="legacy-selection-card">
+              <span className="summary-label">Diatonic Triads</span>
+              <div className="legacy-token-row">
+                {triads.map((chord) => (
+                  <button
+                    key={`${currentKey}-${chord.roman}`}
+                    className="harmony-chip harmony-chip--chord"
+                    onClick={() => playChord(chord.notes)}
+                    type="button"
+                  >
+                    {chord.roman} {chord.name.replace(/^.*?\s/, "")}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <InstrumentBoard
+            instrumentId={currentInstrument}
+            activeNotes={currentScale}
+            keySignature={currentKey}
+          />
         </article>
       </div>
-
-      <article className="detail-card">
-        <div className="detail-header">
-          <div>
-            <span className="summary-label">Interactive Wheel</span>
-            <h2>{currentKey}</h2>
-            <p>Outer ring is major, inner ring is minor. Clicking any node updates the source app key.</p>
-          </div>
-        </div>
-        <div className="circle-wheel">
-          <div className="circle-wheel-ring circle-wheel-ring--outer" />
-          <div className="circle-wheel-ring circle-wheel-ring--inner" />
-
-          {CIRCLE_MAJOR_KEYS.map((root, index) => (
-            <CircleNode
-              key={`major-${root}`}
-              label={root}
-              kind="major"
-              active={currentKey === `${root} Major`}
-              x={RING_POSITIONS[index].x}
-              y={RING_POSITIONS[index].y}
-              onClick={() => setCurrentKey(`${root} Major`)}
-            />
-          ))}
-
-          {CIRCLE_MINOR_KEYS.map((root, index) => (
-            <CircleNode
-              key={`minor-${root}`}
-              label={root}
-              kind="minor"
-              active={currentKey === `${root} Minor`}
-              x={50 + (RING_POSITIONS[index].x - 50) * 0.68}
-              y={50 + (RING_POSITIONS[index].y - 50) * 0.68}
-              onClick={() => setCurrentKey(`${root} Minor`)}
-            />
-          ))}
-        </div>
-      </article>
-
-      <article className="detail-card">
-        <div className="detail-header">
-          <div>
-            <span className="summary-label">Diatonic Triads</span>
-            <h2>{currentKey}</h2>
-            <p>Click any triad to hear it and see it on the current source-side instrument board.</p>
-          </div>
-        </div>
-        <div className="feature-grid">
-          {triads.map((chord) => (
-            <article className="feature-card" key={`${currentKey}-${chord.roman}`}>
-              <div className="feature-card-header">
-                <div>
-                  <span className="card-tag">{chord.roman}</span>
-                  <h3>{chord.name}</h3>
-                </div>
-                <button className="ghost-button" onClick={() => playChord(chord.notes)}>
-                  Play
-                </button>
-              </div>
-              <NoteBadgeList notes={chord.notes} keySignature={currentKey} />
-            </article>
-          ))}
-        </div>
-      </article>
-
-      <article className="detail-card">
-        <div className="detail-header">
-          <div>
-            <span className="summary-label">Instrument Context</span>
-            <h2>{currentInstrumentConfig.name}</h2>
-            <p>The instrument layer now works with circle-of-fifths selections too.</p>
-          </div>
-          <NoteBadgeList notes={currentScale} keySignature={currentKey} />
-        </div>
-        <InstrumentBoard
-          instrumentId={currentInstrument}
-          activeNotes={currentScale}
-          keySignature={currentKey}
-        />
-      </article>
     </section>
   );
 }

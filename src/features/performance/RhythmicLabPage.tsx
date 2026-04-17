@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { playMetronomeClick, stopAllAudio } from "../../audio/audioEngine";
 import { useAppStore } from "../../app/store/useAppStore";
+import { useShellBridgeStore } from "../../app/store/useShellBridgeStore";
 import {
   SYNCOPATION_PATTERNS,
   SLICER_PRESETS,
@@ -39,6 +40,7 @@ const RHYTHM_TABS: { id: RhythmTab; label: string; copy: string }[] = [
 
 export function RhythmicLabPage() {
   const tempo = useAppStore((state) => state.tempo);
+  const updateRoute = useShellBridgeStore((state) => state.updateRoute);
   const [activeTab, setActiveTab] = useState<RhythmTab>("polyrhythm");
   const [running, setRunning] = useState(false);
   const [cursor, setCursor] = useState(0);
@@ -83,6 +85,14 @@ export function RhythmicLabPage() {
       ? "Generated on the fly for ear-and-body timing drills."
       : SYNCOPATION_PATTERNS.find((pattern) => pattern.id === syncPatternId)?.desc ??
         SYNCOPATION_PATTERNS[0].desc;
+  const playableLabel =
+    activeTab === "polyrhythm"
+      ? `${polyA}:${polyB} polyrhythm`
+      : activeTab === "syncopation"
+        ? `${syncLabel} syncopation`
+        : activeTab === "tuplets"
+          ? `${tupletType}:${tupletAgainst} tuplets`
+          : "8-step beat slicer";
   const currentTuplet =
     TUPLET_PRESETS.find(
       (preset) => preset.type === tupletType && preset.against === tupletAgainst,
@@ -121,6 +131,119 @@ export function RhythmicLabPage() {
     tupletAgainstRef.current = tupletAgainst;
   }, [tupletAgainst]);
 
+  const clearTransport = useCallback(() => {
+    if (timerRef.current) window.clearTimeout(timerRef.current);
+    timerRef.current = null;
+  }, []);
+
+  const stopTransport = useCallback(() => {
+    clearTransport();
+    setRunning(false);
+    setCursor(0);
+    stopAllAudio();
+  }, [clearTransport]);
+
+  const stepTransport = useCallback(
+    (step = 0) => {
+      const tab = activeTabRef.current;
+      setCursor(step);
+
+      if (tab === "polyrhythm") {
+        const timeline = polyTimelineRef.current;
+        const current = timeline[step % timeline.length];
+        if (current.a && current.b) {
+          playMetronomeClick("primary");
+        } else if (current.a) {
+          playMetronomeClick("secondary");
+        } else if (current.b) {
+          playMetronomeClick("subdivision");
+        }
+
+        const total = leastCommonMultiple(polyA, polyB);
+        const subdivisionMs = (60000 / Math.max(tempoRef.current, 40)) / total;
+        timerRef.current = window.setTimeout(
+          () => stepTransport((step + 1) % timeline.length),
+          Math.max(24, subdivisionMs),
+        );
+        return;
+      }
+
+      if (tab === "syncopation") {
+        const pattern = syncPatternRef.current;
+        if (pattern[step]) playMetronomeClick("primary");
+        else playMetronomeClick("subdivision");
+        timerRef.current = window.setTimeout(
+          () => stepTransport((step + 1) % pattern.length),
+          Math.max(40, 60000 / Math.max(tempoRef.current, 40) / 2),
+        );
+        return;
+      }
+
+      if (tab === "tuplets") {
+        playMetronomeClick(step % tupletTypeRef.current === 0 ? "primary" : "secondary");
+        const tupletMs =
+          (60000 / Math.max(tempoRef.current, 40)) *
+          (tupletAgainstRef.current / tupletTypeRef.current);
+        timerRef.current = window.setTimeout(
+          () => stepTransport((step + 1) % tupletTypeRef.current),
+          Math.max(28, tupletMs),
+        );
+        return;
+      }
+
+      const pattern = slicerPatternRef.current;
+      const level = pattern[step];
+      if (level >= 0.85) playMetronomeClick("primary");
+      else if (level >= 0.45) playMetronomeClick("secondary");
+      else if (level > 0) playMetronomeClick("subdivision");
+      timerRef.current = window.setTimeout(
+        () => stepTransport((step + 1) % pattern.length),
+        Math.max(40, 60000 / Math.max(tempoRef.current, 40) / 2),
+      );
+    },
+    [polyA, polyB],
+  );
+
+  const resetTransport = useCallback(() => {
+    clearTransport();
+    setCursor(0);
+    if (!running) return;
+    stepTransport(0);
+  }, [clearTransport, running, stepTransport]);
+
+  const toggleTransport = useCallback(() => {
+    if (running) {
+      stopTransport();
+      return;
+    }
+    setRunning(true);
+    setCursor(0);
+    stepTransport(0);
+  }, [running, stepTransport, stopTransport]);
+
+  const clearRhythmLab = useCallback(() => {
+    stopTransport();
+    setActiveTab("polyrhythm");
+    setPolyA(3);
+    setPolyB(4);
+    setSyncPatternId(SYNCOPATION_PATTERNS[0].id);
+    setRandomSyncPattern(createRandomSyncopationPattern());
+    setTupletType(3);
+    setTupletAgainst(2);
+    setSlicerPattern([...SLICER_PRESETS[0].pattern]);
+  }, [stopTransport]);
+
+  useEffect(() => {
+    updateRoute("rhythmic", {
+      title: "Rhythmic Lab",
+      subtitle: "Polyrhythms, syncopation, tuplets, and beat-slicing.",
+      playableLabel,
+      playableNoteSet: [],
+      playCurrent: toggleTransport,
+      clear: clearRhythmLab,
+    });
+  }, [clearRhythmLab, playableLabel, toggleTransport, updateRoute]);
+
   useEffect(
     () => () => {
       if (timerRef.current) window.clearTimeout(timerRef.current);
@@ -133,93 +256,6 @@ export function RhythmicLabPage() {
     if (!running) return;
     resetTransport();
   }, [activeTab, polyA, polyB, syncPatternId, randomSyncPattern, slicerPattern, tupletAgainst, tupletType]);
-
-  function clearTransport() {
-    if (timerRef.current) window.clearTimeout(timerRef.current);
-    timerRef.current = null;
-  }
-
-  function stopTransport() {
-    clearTransport();
-    setRunning(false);
-    setCursor(0);
-    stopAllAudio();
-  }
-
-  function stepTransport(step = 0) {
-    const tab = activeTabRef.current;
-    setCursor(step);
-
-    if (tab === "polyrhythm") {
-      const timeline = polyTimelineRef.current;
-      const current = timeline[step % timeline.length];
-      if (current.a && current.b) {
-        playMetronomeClick("primary");
-      } else if (current.a) {
-        playMetronomeClick("secondary");
-      } else if (current.b) {
-        playMetronomeClick("subdivision");
-      }
-
-      const total = leastCommonMultiple(polyA, polyB);
-      const subdivisionMs = (60000 / Math.max(tempoRef.current, 40)) / total;
-      timerRef.current = window.setTimeout(
-        () => stepTransport((step + 1) % timeline.length),
-        Math.max(24, subdivisionMs),
-      );
-      return;
-    }
-
-    if (tab === "syncopation") {
-      const pattern = syncPatternRef.current;
-      if (pattern[step]) playMetronomeClick("primary");
-      else playMetronomeClick("subdivision");
-      timerRef.current = window.setTimeout(
-        () => stepTransport((step + 1) % pattern.length),
-        Math.max(40, 60000 / Math.max(tempoRef.current, 40) / 2),
-      );
-      return;
-    }
-
-    if (tab === "tuplets") {
-      playMetronomeClick(step % tupletTypeRef.current === 0 ? "primary" : "secondary");
-      const tupletMs =
-        (60000 / Math.max(tempoRef.current, 40)) *
-        (tupletAgainstRef.current / tupletTypeRef.current);
-      timerRef.current = window.setTimeout(
-        () => stepTransport((step + 1) % tupletTypeRef.current),
-        Math.max(28, tupletMs),
-      );
-      return;
-    }
-
-    const pattern = slicerPatternRef.current;
-    const level = pattern[step];
-    if (level >= 0.85) playMetronomeClick("primary");
-    else if (level >= 0.45) playMetronomeClick("secondary");
-    else if (level > 0) playMetronomeClick("subdivision");
-    timerRef.current = window.setTimeout(
-      () => stepTransport((step + 1) % pattern.length),
-      Math.max(40, 60000 / Math.max(tempoRef.current, 40) / 2),
-    );
-  }
-
-  function resetTransport() {
-    clearTransport();
-    setCursor(0);
-    if (!running) return;
-    stepTransport(0);
-  }
-
-  function toggleTransport() {
-    if (running) {
-      stopTransport();
-      return;
-    }
-    setRunning(true);
-    setCursor(0);
-    stepTransport(0);
-  }
 
   function applyTupletPreset(type: number, against: number) {
     setTupletType(type);
@@ -249,16 +285,29 @@ export function RhythmicLabPage() {
 
   return (
     <section className="page-section">
-      <div className="page-hero">
-        <div>
-          <span className="eyebrow">Source Feature</span>
-          <h1>Rhythmic Lab</h1>
-          <p>
-            Polyrhythms, syncopation, tuplets, and accent slicing now run source-side instead of
-            living only in the legacy runtime.
-          </p>
+      <article className="legacy-tool-panel">
+        <div className="legacy-tool-panel__header">
+          <div>
+            <span className="eyebrow">Rhythm Trainer</span>
+            <h1 className="legacy-tool-panel__title">Rhythmic Lab</h1>
+            <p className="legacy-tool-panel__copy">
+              Polyrhythms, syncopation, tuplets, and accent slicing in the older drill-selector
+              layout instead of the generic page-hero and summary stack.
+            </p>
+          </div>
+          <div className="legacy-toolbar-row">
+            <span className="legacy-toolbar-chip">
+              Drill <strong>{RHYTHM_TABS.find((tab) => tab.id === activeTab)?.label}</strong>
+            </span>
+            <span className="legacy-toolbar-chip">
+              Tempo <strong>{tempo} BPM</strong>
+            </span>
+            <span className="legacy-toolbar-chip">
+              Transport <strong>{running ? "Running" : "Stopped"}</strong>
+            </span>
+          </div>
         </div>
-        <div className="hero-actions">
+        <div className="legacy-toolbar-row">
           <button className="primary-button" onClick={toggleTransport}>
             {running ? "Stop" : "Play"}
           </button>
@@ -266,46 +315,20 @@ export function RhythmicLabPage() {
             Reset
           </button>
         </div>
-      </div>
+      </article>
 
-      <div className="summary-grid">
-        <article className="summary-card">
-          <span className="summary-label">Current Drill</span>
-          <h2>{RHYTHM_TABS.find((tab) => tab.id === activeTab)?.label}</h2>
-          <p>{RHYTHM_TABS.find((tab) => tab.id === activeTab)?.copy}</p>
-        </article>
-        <article className="summary-card">
-          <span className="summary-label">Tempo</span>
-          <h2>{tempo} BPM</h2>
-          <p>Uses the shared global tempo from the source app toolbar.</p>
-        </article>
-        <article className="summary-card">
-          <span className="summary-label">Transport</span>
-          <h2>{running ? "Running" : "Stopped"}</h2>
-          <p>
-            {activeTab === "polyrhythm"
-              ? `${polyA}:${polyB} ratio`
-              : activeTab === "syncopation"
-                ? syncLabel
-                : activeTab === "tuplets"
-                  ? `${tupletType} in the space of ${tupletAgainst}`
-                  : `${slicerPattern.filter((value) => value > 0).length} active accents`}
-          </p>
-        </article>
-      </div>
-
-      <article className="detail-card">
-        <div className="detail-header">
+      <article className="legacy-tool-panel">
+        <div className="legacy-tool-panel__header">
           <div>
             <span className="summary-label">Modes</span>
             <h2>Select a rhythm drill</h2>
           </div>
         </div>
-        <div className="segmented-button-row">
+        <div className="legacy-toolbar-row">
           {RHYTHM_TABS.map((tab) => (
             <button
               key={tab.id}
-              className={activeTab === tab.id ? "secondary-button" : "ghost-button"}
+              className={`legacy-mode-button ${activeTab === tab.id ? "is-active" : ""}`}
               onClick={() => setActiveTab(tab.id)}
             >
               {tab.label}
@@ -315,9 +338,9 @@ export function RhythmicLabPage() {
       </article>
 
       {activeTab === "polyrhythm" ? (
-        <div className="feature-grid">
-          <article className="detail-card">
-            <div className="detail-header">
+        <div className="legacy-lab-grid">
+          <article className="legacy-preview-panel">
+            <div className="legacy-tool-panel__header">
               <div>
                 <span className="summary-label">Ratio</span>
                 <h2>{polyA}:{polyB}</h2>
@@ -371,8 +394,8 @@ export function RhythmicLabPage() {
             </div>
           </article>
 
-          <article className="detail-card">
-            <div className="detail-header">
+          <article className="legacy-selection-card">
+            <div className="legacy-tool-panel__header">
               <div>
                 <span className="summary-label">Listening</span>
                 <h2>What to notice</h2>
@@ -390,9 +413,9 @@ export function RhythmicLabPage() {
       ) : null}
 
       {activeTab === "syncopation" ? (
-        <div className="feature-grid">
-          <article className="detail-card">
-            <div className="detail-header">
+        <div className="legacy-lab-grid">
+          <article className="legacy-preview-panel">
+            <div className="legacy-tool-panel__header">
               <div>
                 <span className="summary-label">Pattern</span>
                 <h2>{syncLabel}</h2>
@@ -426,8 +449,8 @@ export function RhythmicLabPage() {
             </div>
           </article>
 
-          <article className="detail-card">
-            <div className="detail-header">
+          <article className="legacy-selection-card">
+            <div className="legacy-tool-panel__header">
               <div>
                 <span className="summary-label">Practice</span>
                 <h2>Internalize the displacement</h2>
@@ -445,9 +468,9 @@ export function RhythmicLabPage() {
       ) : null}
 
       {activeTab === "tuplets" ? (
-        <div className="feature-grid">
-          <article className="detail-card">
-            <div className="detail-header">
+        <div className="legacy-lab-grid">
+          <article className="legacy-preview-panel">
+            <div className="legacy-tool-panel__header">
               <div>
                 <span className="summary-label">Ratio</span>
                 <h2>
@@ -509,8 +532,8 @@ export function RhythmicLabPage() {
             </div>
           </article>
 
-          <article className="detail-card">
-            <div className="detail-header">
+          <article className="legacy-selection-card">
+            <div className="legacy-tool-panel__header">
               <div>
                 <span className="summary-label">Timing</span>
                 <h2>{currentTuplet.name}</h2>
@@ -533,9 +556,9 @@ export function RhythmicLabPage() {
       ) : null}
 
       {activeTab === "slicer" ? (
-        <div className="feature-grid">
-          <article className="detail-card">
-            <div className="detail-header">
+        <div className="legacy-lab-grid">
+          <article className="legacy-preview-panel">
+            <div className="legacy-tool-panel__header">
               <div>
                 <span className="summary-label">Accent Map</span>
                 <h2>8-step Beat Slicer</h2>
@@ -570,8 +593,8 @@ export function RhythmicLabPage() {
             </div>
           </article>
 
-          <article className="detail-card">
-            <div className="detail-header">
+          <article className="legacy-selection-card">
+            <div className="legacy-tool-panel__header">
               <div>
                 <span className="summary-label">Use</span>
                 <h2>Loop and feel the contour</h2>

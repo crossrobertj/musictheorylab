@@ -1,6 +1,7 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { playChord, playProgression, playScale } from "../../audio/audioEngine";
+import { useShellBridgeStore } from "../../app/store/useShellBridgeStore";
 import { useAppStore } from "../../app/store/useAppStore";
 import { type FavoriteItem, useFavoritesStore } from "../../app/store/useFavoritesStore";
 import { FavoriteToggleButton } from "../../components/FavoriteToggleButton";
@@ -27,6 +28,7 @@ export function FavoritesPage() {
   const setCurrentKey = useAppStore((state) => state.setCurrentKey);
   const favorites = useFavoritesStore((state) => state.favorites);
   const clearFavorites = useFavoritesStore((state) => state.clearFavorites);
+  const updateRoute = useShellBridgeStore((state) => state.updateRoute);
 
   const groupedFavorites = useMemo(() => {
     const groups = new Map<string, FavoriteItem[]>();
@@ -44,6 +46,20 @@ export function FavoritesPage() {
     return Array.from(groups.entries());
   }, [favorites]);
 
+  const playableLabel =
+    favorites.length > 0 ? `${favorites.length} saved favorite${favorites.length === 1 ? "" : "s"}` : "No favorites saved";
+
+  useEffect(() => {
+    updateRoute("favorites", {
+      title: "Favorites",
+      subtitle: "Saved chords, scales, and progressions.",
+      playableLabel,
+      playableNoteSet: [],
+      playCurrent: null,
+      clear: clearFavorites,
+    });
+  }, [clearFavorites, playableLabel, updateRoute]);
+
   function openFavorite(item: FavoriteItem) {
     if (item.keySignature) {
       setCurrentKey(item.keySignature);
@@ -55,16 +71,26 @@ export function FavoritesPage() {
 
   return (
     <section className="page-section">
-      <div className="page-hero">
-        <div>
-          <span className="eyebrow">Source Feature</span>
-          <h1>Favorites</h1>
-          <p>
-            Saved chords, scales, and progressions now live in source-side persistence. This page
-            also migrates the legacy favorites key so older saved items are not stranded.
-          </p>
+      <article className="legacy-tool-panel">
+        <div className="legacy-tool-panel__header">
+          <div>
+            <span className="eyebrow">Saved Library</span>
+            <h1 className="legacy-tool-panel__title">Favorites</h1>
+            <p className="legacy-tool-panel__copy">
+              Saved chords, scales, and progressions with legacy-compatible persistence and a denser
+              library layout instead of generic source summary cards.
+            </p>
+          </div>
+          <div className="legacy-toolbar-row">
+            <span className="legacy-toolbar-chip">
+              Saved <strong>{favorites.length}</strong>
+            </span>
+            <span className="legacy-toolbar-chip">
+              Key <strong>{currentKey}</strong>
+            </span>
+          </div>
         </div>
-        <div className="hero-actions">
+        <div className="legacy-toolbar-row">
           <button
             className="ghost-button"
             onClick={() => clearFavorites()}
@@ -73,28 +99,10 @@ export function FavoritesPage() {
             Clear All
           </button>
         </div>
-      </div>
-
-      <div className="summary-grid">
-        <article className="summary-card">
-          <span className="summary-label">Saved Items</span>
-          <h2>{favorites.length}</h2>
-          <p>Favorites are deduplicated by item type and name, matching the legacy behavior.</p>
-        </article>
-        <article className="summary-card">
-          <span className="summary-label">Migrated</span>
-          <h2>Legacy-Compatible</h2>
-          <p>The source store reads the old `musicTheoryProFavoritesV2` data the first time it loads.</p>
-        </article>
-        <article className="summary-card">
-          <span className="summary-label">Current Key</span>
-          <h2>{currentKey}</h2>
-          <p>Opening a favorite restores its saved key when that information exists.</p>
-        </article>
-      </div>
+      </article>
 
       {favorites.length === 0 ? (
-        <article className="detail-card">
+        <article className="legacy-preview-panel">
           <span className="summary-label">No Favorites Yet</span>
           <h2>Start starring source-side cards</h2>
           <p>
@@ -104,31 +112,31 @@ export function FavoritesPage() {
         </article>
       ) : (
         groupedFavorites.map(([label, items]) => (
-          <article className="detail-card" key={label}>
-            <div className="detail-header">
+          <article className="legacy-tool-panel" key={label}>
+            <div className="legacy-tool-panel__header">
               <div>
                 <span className="summary-label">{label}</span>
                 <h2>{items.length} saved</h2>
               </div>
             </div>
 
-            <div className="feature-grid">
+            <div className="legacy-catalog-grid">
               {items.map((item) => (
-                <article key={`${item.type}:${item.name}`} className="feature-card favorite-item-card">
-                  <div className="feature-card-header">
+                <article key={`${item.type}:${item.name}`} className="legacy-catalog-card favorite-item-card">
+                  <div className="legacy-catalog-card__header">
                     <div>
-                      <span className="card-tag">{item.type}</span>
-                      <h3>{item.name}</h3>
+                      <span className="legacy-catalog-card__eyebrow">{item.type}</span>
+                      <h3 className="legacy-catalog-card__title">{item.name}</h3>
                     </div>
                     <FavoriteToggleButton item={item} />
                   </div>
-                  <p className="card-copy">
+                  <p className="legacy-catalog-card__subtitle">
                     {item.desc || item.style || item.region || item.family || "Saved musical reference."}
                   </p>
-                  <div className="info-chip-row">
-                    {item.keySignature ? <span className="info-chip">{item.keySignature}</span> : null}
+                  <div className="legacy-preview-panel__meta">
+                    {item.keySignature ? <span className="legacy-preview-chip">{item.keySignature}</span> : null}
                     {item.type === "progression" && item.numerals?.length ? (
-                      <span className="info-chip">{item.numerals.join(" - ")}</span>
+                      <span className="legacy-preview-chip">{item.numerals.join(" - ")}</span>
                     ) : null}
                   </div>
                   {item.notes?.length ? (

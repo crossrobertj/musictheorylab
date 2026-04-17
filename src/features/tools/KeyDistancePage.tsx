@@ -1,28 +1,49 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useShellBridgeStore } from "../../app/store/useShellBridgeStore";
 import { KEY_OPTIONS } from "../../domain/generated/theory-data";
 import { calculateKeyDistance } from "../../domain/music";
 
 export function KeyDistancePage() {
   const [fromKey, setFromKey] = useState("C Major");
   const [toKey, setToKey] = useState("G Major");
+  const updateRoute = useShellBridgeStore((state) => state.updateRoute);
 
   const analysis = useMemo(() => calculateKeyDistance(fromKey, toKey), [fromKey, toKey]);
+  const playableLabel = `${fromKey} → ${toKey}`;
+
+  const clear = useCallback(() => {
+    setFromKey("C Major");
+    setToKey("G Major");
+  }, []);
+
+  useEffect(() => {
+    updateRoute("calculator", {
+      title: "Key Distance",
+      subtitle: "Compare tonal distance between two keys.",
+      playableLabel,
+      playableNoteSet: [],
+      playCurrent: null,
+      clear,
+    });
+  }, [clear, playableLabel, updateRoute]);
 
   return (
     <section className="page-section">
-      <div className="page-hero">
-        <div>
-          <span className="eyebrow">Source Feature</span>
-          <h1>Key Distance</h1>
-          <p>
-            This tool compares key centers using shared source note math and scale overlap. It now
-            runs entirely outside the legacy runtime.
-          </p>
+      <div className="legacy-tool-panel">
+        <div className="legacy-tool-panel__header">
+          <div>
+            <span className="eyebrow">Theory Calculator</span>
+            <h1 className="legacy-tool-panel__title">Key Distance</h1>
+            <p className="legacy-tool-panel__copy">
+              Compare two key centers, inspect their overlap, and read the tonal relationship in a
+              denser legacy-style reference layout.
+            </p>
+          </div>
         </div>
       </div>
 
-      <div className="summary-grid">
-        <article className="summary-card">
+      <div className="legacy-catalog-grid">
+        <article className="legacy-catalog-card">
           <span className="summary-label">Compare Keys</span>
           <h2>
             {fromKey} → {toKey}
@@ -51,7 +72,7 @@ export function KeyDistancePage() {
           </div>
         </article>
 
-        <article className="summary-card">
+        <article className="legacy-catalog-card">
           <span className="summary-label">Shortest Distance</span>
           <h2>{analysis.shortestDistance} semitones</h2>
           <p>{analysis.relationship.name}</p>
@@ -62,7 +83,7 @@ export function KeyDistancePage() {
           </div>
         </article>
 
-        <article className="summary-card">
+        <article className="legacy-catalog-card">
           <span className="summary-label">Shared Notes</span>
           <h2>{analysis.sharedNotes.length}</h2>
           <div className="scale-strip">
@@ -79,12 +100,12 @@ export function KeyDistancePage() {
         </article>
       </div>
 
-      <article className="detail-card">
-        <div className="detail-header">
+      <article className="legacy-preview-panel">
+        <div className="legacy-tool-panel__header">
           <div>
             <span className="summary-label">Relationship</span>
             <h2>{analysis.relationship.name}</h2>
-            <p>{analysis.relationship.desc}</p>
+            <p className="legacy-tool-panel__copy">{analysis.relationship.desc}</p>
           </div>
         </div>
       </article>

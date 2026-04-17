@@ -12,7 +12,7 @@ const browser = await puppeteer.launch({
   args: ["--no-sandbox", "--disable-gpu"],
 });
 
-async function inspectPage(url, evaluate) {
+async function inspectPage(url, evaluate, prepare) {
   const page = await browser.newPage();
   const consoleErrors = [];
   const pageErrors = [];
@@ -43,6 +43,9 @@ async function inspectPage(url, evaluate) {
   });
 
   await page.goto(url, { waitUntil: "networkidle0", timeout: 30000 });
+  if (prepare) {
+    await prepare(page);
+  }
   const diagnostics = await page.evaluate(evaluate);
   await page.close();
 
@@ -67,21 +70,76 @@ async function inspectOfflineRecovery(url) {
     ]);
   });
 
+  const hasController = await page.evaluate(
+    () => "serviceWorker" in navigator && Boolean(navigator.serviceWorker.controller),
+  );
+
+  if (!hasController) {
+    await page.reload({ waitUntil: "networkidle0", timeout: 30000 });
+    await page.evaluate(async () => {
+      if (!("serviceWorker" in navigator) || navigator.serviceWorker.controller) return;
+      await new Promise((resolve) => {
+        const timeoutId = window.setTimeout(resolve, 2500);
+        navigator.serviceWorker.addEventListener(
+          "controllerchange",
+          () => {
+            window.clearTimeout(timeoutId);
+            resolve();
+          },
+          { once: true },
+        );
+      });
+    });
+  }
+
   await page.setOfflineMode(true);
   await page.reload({ waitUntil: "domcontentloaded", timeout: 30000 });
-  await page.waitForSelector(".source-app-shell", { timeout: 5000 });
-  await page.waitForSelector(".page-hero h1", { timeout: 5000 });
+  await page.waitForSelector(".legacy-shell", { timeout: 5000 });
+  await page.waitForSelector(".page-section", { timeout: 5000 });
 
   const diagnostics = await page.evaluate(() => ({
     activeRoute: window.location.pathname,
-    hero: document.querySelector(".page-hero h1")?.textContent ?? "",
-    sourceShell: Boolean(document.querySelector(".source-app-shell")),
+    pageSection: Boolean(document.querySelector(".page-section")),
+    sourceShell: Boolean(document.querySelector(".legacy-shell")),
+    sidebar: Boolean(document.querySelector(".legacy-sidebar")),
+    header: Boolean(document.querySelector(".legacy-header")),
+    instrumentStrip: Boolean(document.querySelector(".legacy-instrument-strip")),
+    playbackBar: Boolean(document.querySelector(".legacy-playback-bar")),
   }));
 
   await page.setOfflineMode(false);
   await page.close();
   return { url, diagnostics };
 }
+
+const keyPropagationResult = await inspectPage(
+  `${baseUrl}/app/chords`,
+  () => {
+    const scaleCard = Array.from(document.querySelectorAll(".summary-card")).find((card) => {
+      const label = card.querySelector(".summary-label")?.textContent?.trim();
+      return label === "Scale";
+    });
+
+    return {
+      selectedKey: document.querySelector('select[aria-label="Key"]')?.value ?? "",
+      scaleSummary: scaleCard?.querySelector("h2")?.textContent?.trim() ?? "",
+    };
+  },
+  async (page) => {
+    await page.select('select[aria-label="Key"]', "G Major");
+    await page.waitForFunction(
+      () => {
+        const scaleCard = Array.from(document.querySelectorAll(".summary-card")).find((card) => {
+          const label = card.querySelector(".summary-label")?.textContent?.trim();
+          return label === "Scale";
+        });
+
+        return scaleCard?.querySelector("h2")?.textContent?.trim() === "G Major";
+      },
+      { timeout: 5000 },
+    );
+  },
+);
 
 const sourcePaths = [
   "/",
@@ -133,10 +191,14 @@ const sourceResults = await Promise.all(
 
       return {
         title: document.title,
-        sourceShell: Boolean(document.querySelector(".source-app-shell")),
+        sourceShell: Boolean(document.querySelector(".legacy-shell")),
+        sidebar: Boolean(document.querySelector(".legacy-sidebar")),
+        header: Boolean(document.querySelector(".legacy-header")),
+        instrumentStrip: Boolean(document.querySelector(".legacy-instrument-strip")),
+        playbackBar: Boolean(document.querySelector(".legacy-playback-bar")),
         activeFeatureCards: document.querySelectorAll(".feature-card").length,
         activeRoute: window.location.pathname,
-        hero: document.querySelector(".page-hero h1")?.textContent ?? "",
+        pageSection: Boolean(document.querySelector(".page-section")),
         learningStepCount: document.querySelectorAll(".learning-step-row").length,
         learningLinkCount: document.querySelectorAll(".learning-step-row .learning-step-link").length,
         finderEngine: Array.from(document.querySelectorAll(".info-chip"))
@@ -177,16 +239,32 @@ const offlineRecoveryResult = await inspectOfflineRecovery(`${baseUrl}/app/chord
 
 await browser.close();
 
-const results = [...sourceResults, legacyResult, offlineRecoveryResult];
+const results = [...sourceResults, legacyResult, keyPropagationResult, offlineRecoveryResult];
 const unexpectedFailures = results.flatMap((result) => {
+  if (result === keyPropagationResult) {
+    const validationErrors = [];
+    if (result.diagnostics.selectedKey !== "G Major") {
+      validationErrors.push("key selector did not update");
+    }
+    if (result.diagnostics.scaleSummary !== "G Major") {
+      validationErrors.push("key propagation did not reach diatonic chords content");
+    }
+
+    return validationErrors.map((message) => ({ url: result.url, type: "validation", message }));
+  }
+
   if (result === offlineRecoveryResult) {
     const validationErrors = [];
     if (!result.diagnostics.sourceShell) validationErrors.push("offline source shell missing");
+    if (!result.diagnostics.sidebar) validationErrors.push("offline sidebar missing");
+    if (!result.diagnostics.header) validationErrors.push("offline header missing");
+    if (!result.diagnostics.instrumentStrip) validationErrors.push("offline instrument strip missing");
+    if (!result.diagnostics.playbackBar) validationErrors.push("offline playback bar missing");
     if (result.diagnostics.activeRoute !== "/app/chords") {
       validationErrors.push("offline reload route mismatch");
     }
-    if (!result.diagnostics.hero) {
-      validationErrors.push("offline reload missing hero");
+    if (!result.diagnostics.pageSection) {
+      validationErrors.push("offline reload missing route content");
     }
 
     return validationErrors.map((message) => ({ url: result.url, type: "validation", message }));
@@ -199,9 +277,11 @@ const unexpectedFailures = results.flatMap((result) => {
 
   if (sourceResults.includes(result)) {
     if (!result.diagnostics.sourceShell) validationErrors.push("source shell missing");
-    if (!result.diagnostics.hero) {
-      validationErrors.push("source route missing page hero");
-    }
+    if (!result.diagnostics.sidebar) validationErrors.push("source sidebar missing");
+    if (!result.diagnostics.header) validationErrors.push("source header missing");
+    if (!result.diagnostics.instrumentStrip) validationErrors.push("source instrument strip missing");
+    if (!result.diagnostics.playbackBar) validationErrors.push("source playback bar missing");
+    if (!result.diagnostics.pageSection) validationErrors.push("source route content missing");
     if (result.diagnostics.activeRoute === "/app/chords" && result.diagnostics.activeFeatureCards === 0) {
       validationErrors.push("source feature grid empty");
     }

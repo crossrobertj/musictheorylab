@@ -1,13 +1,18 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { playProgression } from "../../audio/audioEngine";
 import { FavoriteToggleButton } from "../../components/FavoriteToggleButton";
+import { HarmonicMatchesPanel, ScaleHarmonizationPanel } from "../../components/HarmonyPanels";
 import { NoteBadgeList } from "../../components/NoteBadgeList";
 import { useAppStore } from "../../app/store/useAppStore";
+import { useShellBridgeStore } from "../../app/store/useShellBridgeStore";
+import { getCompatibleScalesForNoteClasses } from "../../domain/finder";
 import { PROGRESSIONS } from "../../domain/generated/theory-data";
-import { getProgressionPreview } from "../../domain/music";
+import { getProgressionPreview, getRootFromKey, getScaleNotes } from "../../domain/music";
+import { harmonizeScale, harmonizeScaleRows } from "../../domain/scaleBuilder";
 
 export function ProgressionsPage() {
   const currentKey = useAppStore((state) => state.currentKey);
+  const updateRoute = useShellBridgeStore((state) => state.updateRoute);
   const [query, setQuery] = useState("");
   const [styleFilter, setStyleFilter] = useState("All");
   const [selectedProgressionName, setSelectedProgressionName] = useState("I-V-vi-IV");
@@ -30,10 +35,68 @@ export function ProgressionsPage() {
     });
   }, [query, styleFilter]);
 
-  const resolvedChords = getProgressionPreview(selectedProgressionName, currentKey);
-  const selectedProgression =
-    PROGRESSIONS.find((progression) => progression.name === selectedProgressionName) ||
-    PROGRESSIONS[0];
+  const selectedProgression = useMemo(
+    () =>
+      PROGRESSIONS.find((progression) => progression.name === selectedProgressionName) ||
+      PROGRESSIONS[0],
+    [selectedProgressionName],
+  );
+  const resolvedChords = useMemo(
+    () => getProgressionPreview(selectedProgression.name, currentKey),
+    [currentKey, selectedProgression.name],
+  );
+  const resolvedProgressionNotes = useMemo(
+    () => Array.from(new Set(resolvedChords.flatMap((chord) => chord.notes))),
+    [resolvedChords],
+  );
+  const keyIntervals = useMemo(
+    () => (currentKey.includes("Minor") ? [0, 2, 3, 5, 7, 8, 10] : [0, 2, 4, 5, 7, 9, 11]),
+    [currentKey],
+  );
+  const harmonizedChords = useMemo(
+    () => harmonizeScale(getRootFromKey(currentKey), keyIntervals),
+    [currentKey, keyIntervals],
+  );
+  const harmonizationRows = useMemo(
+    () => harmonizeScaleRows(getRootFromKey(currentKey), keyIntervals),
+    [currentKey, keyIntervals],
+  );
+  const currentScaleNotes = useMemo(() => getScaleNotes(currentKey), [currentKey]);
+  const compatibleScales = useMemo(
+    () =>
+      getCompatibleScalesForNoteClasses(
+        resolvedProgressionNotes,
+        8,
+      ),
+    [resolvedProgressionNotes],
+  );
+  const playCurrent = useCallback(() => {
+    playProgression(resolvedChords.map((chord) => chord.notes));
+  }, [resolvedChords]);
+  const clear = useCallback(() => {
+    setQuery("");
+    setStyleFilter("All");
+    setSelectedProgressionName("I-V-vi-IV");
+  }, []);
+
+  useEffect(() => {
+    updateRoute("progressions", {
+      title: "Progressions",
+      subtitle: "Browse common harmonic blueprints in the active key.",
+      playableLabel: `${selectedProgression.name} • ${selectedProgression.style}`,
+      playableNoteSet: resolvedProgressionNotes,
+      playCurrent,
+      clear,
+    });
+  }, [
+    clear,
+    playCurrent,
+    resolvedProgressionNotes,
+    selectedProgression.name,
+    selectedProgression.style,
+    updateRoute,
+  ]);
+
   const selectedFavorite = {
     type: "progression" as const,
     name: selectedProgression.name,
@@ -47,44 +110,46 @@ export function ProgressionsPage() {
 
   return (
     <section className="page-section">
-      <div className="page-hero">
-        <div>
-          <span className="eyebrow">Source Feature</span>
-          <h1>Progressions</h1>
-          <p>
-            Progression definitions now resolve through shared theory helpers. The source view shows
-            numerals, resolved chords, and direct playback in the active key.
-          </p>
-        </div>
-        <div className="toolbar-cluster">
-          <label className="search-field">
-            <span>Search progressions</span>
-            <input
-              type="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="ii-V-I, andalusian, pop..."
-            />
-          </label>
-          <label className="select-field">
-            <span>Style</span>
-            <select value={styleFilter} onChange={(event) => setStyleFilter(event.target.value)}>
-              {styles.map((style) => (
-                <option key={style} value={style}>
-                  {style}
-                </option>
-              ))}
-            </select>
-          </label>
+      <div className="legacy-tool-panel">
+        <div className="legacy-tool-panel__header">
+          <div>
+            <span className="eyebrow">Harmony Library</span>
+            <h1 className="legacy-tool-panel__title">Progressions</h1>
+            <p className="legacy-tool-panel__copy">
+              Browse common harmonic blueprints, resolve them in the active key, and audition the
+              progression from the library wall.
+            </p>
+          </div>
+          <div className="toolbar-cluster">
+            <label className="search-field">
+              <span>Search progressions</span>
+              <input
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="ii-V-I, andalusian, pop..."
+              />
+            </label>
+            <label className="select-field">
+              <span>Style</span>
+              <select value={styleFilter} onChange={(event) => setStyleFilter(event.target.value)}>
+                {styles.map((style) => (
+                  <option key={style} value={style}>
+                    {style}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
         </div>
       </div>
 
-      <article className="detail-card">
-        <div className="detail-header">
+      <article className="legacy-preview-panel">
+        <div className="legacy-tool-panel__header">
           <div>
             <span className="summary-label">Resolved in {currentKey}</span>
             <h2>{selectedProgression.name}</h2>
-            <p>{selectedProgression.desc}</p>
+            <p className="legacy-tool-panel__copy">{selectedProgression.desc}</p>
           </div>
           <div className="toolbar-cluster">
             <FavoriteToggleButton item={selectedFavorite} />
@@ -107,7 +172,21 @@ export function ProgressionsPage() {
         </div>
       </article>
 
-      <div className="feature-grid">
+      <ScaleHarmonizationPanel
+        description={`${selectedProgression.name} • ${selectedProgression.style}`}
+        rows={harmonizationRows}
+        scaleNotes={currentScaleNotes}
+        title={currentKey}
+      />
+
+      <HarmonicMatchesPanel
+        compatibleScales={compatibleScales}
+        description={`Matches derived from ${selectedProgression.name}`}
+        harmonizingChords={harmonizedChords}
+        title={`${currentKey} • ${selectedProgression.name}`}
+      />
+
+      <div className="legacy-catalog-grid">
         {filteredProgressions.map((progression) => {
           const resolved = getProgressionPreview(progression.name, currentKey);
           const favoriteItem = {
@@ -124,19 +203,19 @@ export function ProgressionsPage() {
           return (
             <article
               key={progression.name}
-              className={`feature-card ${
+              className={`legacy-catalog-card ${
                 progression.name === selectedProgressionName ? "is-selected" : ""
               }`}
             >
-              <div className="feature-card-header">
+              <div className="legacy-catalog-card__header">
                 <div>
-                  <span className="card-tag">{progression.style}</span>
-                  <h3>{progression.name}</h3>
+                  <span className="legacy-catalog-card__eyebrow">{progression.style}</span>
+                  <h3 className="legacy-catalog-card__title">{progression.name}</h3>
                 </div>
                 <div className="toolbar-cluster">
                   <FavoriteToggleButton item={favoriteItem} />
                   <button
-                    className="ghost-button"
+                    className="legacy-catalog-card__action"
                     onClick={() => {
                       setSelectedProgressionName(progression.name);
                       playProgression(resolved.map((chord) => chord.notes));
@@ -146,7 +225,7 @@ export function ProgressionsPage() {
                   </button>
                 </div>
               </div>
-              <p className="card-copy">{progression.desc}</p>
+              <p className="legacy-catalog-card__subtitle">{progression.desc}</p>
               <div className="scale-strip">
                 {progression.numerals.map((numeral) => (
                   <span key={`${progression.name}-${numeral}`} className="scale-token">

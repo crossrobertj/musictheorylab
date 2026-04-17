@@ -1,5 +1,7 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { playChord, playScale } from "../../audio/audioEngine";
+import { useShellBridgeStore } from "../../app/store/useShellBridgeStore";
+import { ScaleHarmonizationPanel } from "../../components/HarmonyPanels";
 import { useCustomScalesStore } from "../../app/store/useCustomScalesStore";
 import { KeyboardPreview } from "../../components/KeyboardPreview";
 import { NoteBadgeList } from "../../components/NoteBadgeList";
@@ -12,26 +14,55 @@ import {
   getScaleBuilderNotes,
   getScaleBuilderPlayback,
   harmonizeScale,
+  harmonizeScaleRows,
   normalizeScaleIntervals,
   toggleScaleInterval,
 } from "../../domain/scaleBuilder";
 
 const DEFAULT_INTERVALS = SCALE_BUILDER_PRESETS[0].intervals;
+const ROUTE_ID = "scalebuilder";
+const DEFAULT_ROOT = "C";
+const DEFAULT_NAME = "Custom Major";
 
 export function ScaleBuilderPage() {
   const customScales = useCustomScalesStore((state) => state.customScales);
   const saveScale = useCustomScalesStore((state) => state.saveScale);
   const removeScale = useCustomScalesStore((state) => state.removeScale);
-  const [root, setRoot] = useState("C");
-  const [scaleName, setScaleName] = useState("Custom Major");
+  const updateRoute = useShellBridgeStore((state) => state.updateRoute);
+  const [root, setRoot] = useState(DEFAULT_ROOT);
+  const [scaleName, setScaleName] = useState(DEFAULT_NAME);
   const [intervals, setIntervals] = useState<number[]>(DEFAULT_INTERVALS);
 
   const normalizedName = scaleName.trim();
   const notePreview = useMemo(() => getScaleBuilderNotes(root, intervals), [root, intervals]);
   const playbackNotes = useMemo(() => getScaleBuilderPlayback(root, intervals), [root, intervals]);
   const harmonizedChords = useMemo(() => harmonizeScale(root, intervals), [root, intervals]);
+  const harmonizationRows = useMemo(() => harmonizeScaleRows(root, intervals), [root, intervals]);
   const isBuiltInName = Object.prototype.hasOwnProperty.call(ALL_SCALES, normalizedName);
   const canSave = normalizedName.length > 0 && intervals.length >= 3;
+  const currentBuildLabel = `${root} ${normalizedName || "Untitled Scale"}`;
+  const playableLabel = `${currentBuildLabel} • ${intervals.length}-note build`;
+
+  const playCurrent = useCallback(() => {
+    playScale(playbackNotes);
+  }, [playbackNotes]);
+
+  const clear = useCallback(() => {
+    setRoot(DEFAULT_ROOT);
+    setScaleName(DEFAULT_NAME);
+    setIntervals(DEFAULT_INTERVALS);
+  }, []);
+
+  useEffect(() => {
+    updateRoute(ROUTE_ID, {
+      title: "Scale Builder",
+      subtitle: "Build, audition, and save custom scales.",
+      playableLabel,
+      playableNoteSet: playbackNotes,
+      playCurrent,
+      clear,
+    });
+  }, [clear, playCurrent, playableLabel, playbackNotes, updateRoute]);
 
   function applyPreset(nextName: string, nextIntervals: number[]) {
     setScaleName(nextName);
@@ -45,39 +76,33 @@ export function ScaleBuilderPage() {
 
   return (
     <section className="page-section">
-      <div className="page-hero">
-        <div>
-          <span className="eyebrow">Source Feature</span>
-          <h1>Scale Builder</h1>
-          <p>
-            Build pitch collections semitone by semitone, audition them immediately, and keep your
-            own custom scales in source-side storage. The root stays fixed while you shape the color.
-          </p>
-        </div>
-        <div className="hero-actions">
-          <button
-            className="secondary-button"
-            onClick={() => {
-              setScaleName("Custom Major");
-              setIntervals(DEFAULT_INTERVALS);
-            }}
-          >
+      <div className="legacy-tool-panel">
+        <div className="legacy-tool-panel__header">
+          <div>
+            <span className="eyebrow">Scale Workshop</span>
+            <h1 className="legacy-tool-panel__title">Scale Builder</h1>
+            <p className="legacy-tool-panel__copy">
+              Build pitch collections semitone by semitone, audition them immediately, and keep
+              your own custom scales in source-side storage.
+            </p>
+          </div>
+          <div className="hero-actions">
+          <button className="secondary-button" onClick={clear}>
             Reset
           </button>
-          <button className="primary-button" onClick={() => playScale(playbackNotes)}>
+          <button className="primary-button" onClick={playCurrent}>
             Play Scale
           </button>
+          </div>
         </div>
       </div>
 
-      <article className="detail-card">
-        <div className="detail-header">
+      <article className="legacy-preview-panel">
+        <div className="legacy-tool-panel__header">
           <div>
             <span className="summary-label">Current Build</span>
-            <h2>
-              {root} {normalizedName || "Untitled Scale"}
-            </h2>
-            <p>
+            <h2>{currentBuildLabel}</h2>
+            <p className="legacy-tool-panel__copy">
               {intervals.length} notes · {describeScaleDensity(intervals.length)}
               {isBuiltInName ? " · name collides with a built-in scale" : ""}
             </p>
@@ -105,10 +130,10 @@ export function ScaleBuilderPage() {
           </div>
         </div>
 
-        <div className="detail-meta">
-          <span className="info-chip">Intervals: {intervals.join(" • ")}</span>
-          <span className="info-chip">Notes: {notePreview.length}</span>
-          <span className="info-chip">Saved customs: {customScales.length}</span>
+        <div className="legacy-preview-panel__meta">
+          <span className="legacy-preview-chip">Intervals: {intervals.join(" • ")}</span>
+          <span className="legacy-preview-chip">Notes: {notePreview.length}</span>
+          <span className="legacy-preview-chip">Saved customs: {customScales.length}</span>
         </div>
 
         <div className="preset-grid">
@@ -157,8 +182,8 @@ export function ScaleBuilderPage() {
         <KeyboardPreview activeNotes={notePreview} keySignature={`${root} Major`} />
       </article>
 
-      <div className="summary-grid">
-        <article className="summary-card">
+      <div className="legacy-catalog-grid">
+        <article className="legacy-catalog-card">
           <span className="summary-label">Preset Recall</span>
           <h2>{SCALE_BUILDER_PRESETS.length} templates</h2>
           <p>
@@ -166,7 +191,7 @@ export function ScaleBuilderPage() {
             mutate from there.
           </p>
         </article>
-        <article className="summary-card">
+        <article className="legacy-catalog-card">
           <span className="summary-label">Harmonization</span>
           <h2>{harmonizedChords.length} triads</h2>
           <p>
@@ -174,7 +199,7 @@ export function ScaleBuilderPage() {
             evaluate quickly.
           </p>
         </article>
-        <article className="summary-card">
+        <article className="legacy-catalog-card">
           <span className="summary-label">Persistence</span>
           <h2>{customScales.length} saved</h2>
           <p>
@@ -184,43 +209,19 @@ export function ScaleBuilderPage() {
         </article>
       </div>
 
-      <article className="detail-card">
-        <div className="detail-header">
-          <div>
-            <span className="summary-label">Degree Triads</span>
-            <h2>Harmonized from the current collection</h2>
-            <p>
-              This keeps the legacy builder’s rough harmonization behavior, but makes each degree
-              playable and easier to scan.
-            </p>
-          </div>
-        </div>
+      <ScaleHarmonizationPanel
+        description="Inline legacy-style harmonization table for the current custom collection."
+        rows={harmonizationRows}
+        scaleNotes={playbackNotes}
+        title={currentBuildLabel}
+      />
 
-        <div className="feature-grid">
-          {harmonizedChords.map((chord) => (
-            <article className="feature-card" key={`${chord.degree}-${chord.symbol}`}>
-              <div className="feature-card-header">
-                <div>
-                  <span className="card-tag">Degree {chord.degree}</span>
-                  <h3>{chord.symbol}</h3>
-                </div>
-                <button className="ghost-button" onClick={() => playChord(chord.notes)}>
-                  Play
-                </button>
-              </div>
-              <p className="card-copy">{chord.quality}</p>
-              <NoteBadgeList notes={chord.notes} keySignature={`${root} Major`} />
-            </article>
-          ))}
-        </div>
-      </article>
-
-      <article className="detail-card">
-        <div className="detail-header">
+      <article className="legacy-tool-panel">
+        <div className="legacy-tool-panel__header">
           <div>
             <span className="summary-label">Saved Custom Scales</span>
             <h2>{customScales.length ? "Reusable user collections" : "No saved custom scales yet"}</h2>
-            <p>
+            <p className="legacy-tool-panel__copy">
               Saved entries are local to the source rewrite for now. Loading one replaces the
               current interval set without changing the selected root.
             </p>
@@ -228,15 +229,15 @@ export function ScaleBuilderPage() {
         </div>
 
         {customScales.length ? (
-          <div className="feature-grid">
+          <div className="legacy-catalog-grid">
             {customScales.map((customScale) => {
               const customNotes = getScaleBuilderNotes(root, customScale.intervals);
               return (
-                <article className="feature-card" key={customScale.name}>
-                  <div className="feature-card-header">
+                <article className="legacy-catalog-card" key={customScale.name}>
+                  <div className="legacy-catalog-card__header">
                     <div>
-                      <span className="card-tag">Custom</span>
-                      <h3>{customScale.name}</h3>
+                      <span className="legacy-catalog-card__eyebrow">Custom</span>
+                      <h3 className="legacy-catalog-card__title">{customScale.name}</h3>
                     </div>
                     <div className="toolbar-cluster">
                       <button
@@ -256,7 +257,7 @@ export function ScaleBuilderPage() {
                       </button>
                     </div>
                   </div>
-                  <p className="card-copy">
+                  <p className="legacy-catalog-card__subtitle">
                     {customScale.intervals.length} notes · {describeScaleDensity(customScale.intervals.length)}
                   </p>
                   <div className="info-chip-row">

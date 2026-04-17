@@ -1,5 +1,5 @@
 import { ALL_SCALES, CHORD_TEMPLATES } from "./generated/theory-data";
-import { NOTES, buildChordFromRootAndQuality, getNotesFromIntervals, normalizeNote } from "./music";
+import { NOTES, buildChordFromRootAndQuality, getNotesFromIntervals, getPitchToken, isMicrotonalNote, normalizeNote } from "./music";
 
 export interface FinderChordMatch {
   name: string;
@@ -47,10 +47,11 @@ export type FinderWorkerRequest = FinderWorkerAnalyzeRequest;
 export type FinderWorkerResponse = FinderWorkerResultMessage | FinderWorkerErrorMessage;
 
 export function getUniqueNoteClasses(notes: string[]) {
-  return [...new Set(notes.map((note) => normalizeNote(note).replace(/[0-9]/g, "")))];
+  return [...new Set(notes.map((note) => getPitchToken(note)))];
 }
 
 function noteClassesToPitchClasses(noteClasses: string[]) {
+  if (noteClasses.some((noteClass) => isMicrotonalNote(noteClass))) return [];
   return [...new Set(noteClasses.map((noteClass) => NOTES.indexOf(normalizeNote(noteClass) as (typeof NOTES)[number])))]
     .filter((value) => value >= 0)
     .sort((left, right) => left - right);
@@ -83,18 +84,16 @@ export function findExactChordMatches(noteClasses: string[]) {
 }
 
 export function findMatchingScales(noteClasses: string[]) {
-  const normalized = noteClassesToPitchClasses(noteClasses);
+  const normalized = getUniqueNoteClasses(noteClasses);
   const matches: FinderScaleMatch[] = [];
 
   Object.entries(ALL_SCALES).forEach(([scaleName, scale]) => {
     for (let rootIndex = 0; rootIndex < 12; rootIndex += 1) {
-      const candidate = scale.intervals
-        .map((interval) => (rootIndex + Math.floor(interval)) % 12)
-        .sort((left, right) => left - right);
+      const root = NOTES[rootIndex];
+      const candidate = getNotesFromIntervals(`${root}4`, scale.intervals).map((note) => getPitchToken(note));
       const matchCount = normalized.filter((note) => candidate.includes(note)).length;
 
       if (matchCount === normalized.length && matchCount >= scale.intervals.length * 0.7) {
-        const root = NOTES[rootIndex];
         matches.push({
           name: `${root} ${scaleName}`,
           region: scale.region,
@@ -116,7 +115,7 @@ export function getCompatibleScalesForNoteClasses(noteClasses: string[], limit =
   Object.entries(ALL_SCALES).forEach(([scaleName, scale]) => {
     NOTES.forEach((root) => {
       const notes = getNotesFromIntervals(`${root}4`, scale.intervals);
-      const candidateClasses = notes.map((note) => normalizeNote(note).replace(/[0-9]/g, ""));
+      const candidateClasses = notes.map((note) => getPitchToken(note));
       const candidateSet = new Set(candidateClasses);
       const coverage = target.filter((noteClass) => candidateSet.has(noteClass)).length;
 

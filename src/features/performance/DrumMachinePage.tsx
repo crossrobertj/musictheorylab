@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { playDrumHit, stopAllAudio } from "../../audio/audioEngine";
+import { useShellBridgeStore } from "../../app/store/useShellBridgeStore";
 import { useAppStore } from "../../app/store/useAppStore";
 import {
   DRUM_PATTERN_LIBRARY,
@@ -28,6 +29,7 @@ function downloadMidi(data: Uint8Array, filename: string) {
 
 export function DrumMachinePage() {
   const tempo = useAppStore((state) => state.tempo);
+  const updateRoute = useShellBridgeStore((state) => state.updateRoute);
   const [category, setCategory] = useState("All");
   const [search, setSearch] = useState("");
   const [selectedPatternId, setSelectedPatternId] = useState("DM-001");
@@ -69,6 +71,11 @@ export function DrumMachinePage() {
   const selectedPattern =
     DRUM_PATTERN_LIBRARY.find((pattern) => pattern.id === selectedPatternId) ?? DRUM_PATTERN_LIBRARY[0];
   const stepsPerBeat = timeSignature.endsWith("/8") ? 2 : 4;
+  const selectedPatternSummary = `${selectedPattern.id} • ${selectedPattern.category} / ${selectedPattern.subcategory} • ${selectedPattern.name}`;
+  const playableLabel = useMemo(() => {
+    const hasActiveSteps = Object.values(grid).some((track) => track.some((velocity) => velocity > 0));
+    return hasActiveSteps ? selectedPatternSummary : "Empty drum grid";
+  }, [grid, selectedPatternSummary]);
 
   useEffect(() => {
     gridRef.current = grid;
@@ -94,26 +101,7 @@ export function DrumMachinePage() {
     runningRef.current = running;
   }, [running]);
 
-  useEffect(() => {
-    if (!filteredPatterns.some((pattern) => pattern.id === selectedPatternId)) {
-      const nextPattern = filteredPatterns[0];
-      stopLoop();
-      setSelectedPatternId(nextPattern.id);
-      setGrid(cloneDrumGrid(nextPattern.grid));
-      setSteps(nextPattern.steps);
-      setTimeSignature(nextPattern.steps === 16 ? "4/4" : timeSignature);
-    }
-  }, [filteredPatterns, selectedPatternId, timeSignature]);
-
-  useEffect(
-    () => () => {
-      if (loopHandleRef.current) window.clearTimeout(loopHandleRef.current);
-      stopAllAudio();
-    },
-    [],
-  );
-
-  function stopLoop() {
+  const stopLoop = useCallback(() => {
     if (loopHandleRef.current) window.clearTimeout(loopHandleRef.current);
     loopHandleRef.current = null;
     runningRef.current = false;
@@ -121,9 +109,9 @@ export function DrumMachinePage() {
     stepCursorRef.current = 0;
     setCurrentStep(0);
     stopAllAudio();
-  }
+  }, []);
 
-  function playStep(step: number) {
+  const playStep = useCallback((step: number) => {
     DRUM_TRACKS.forEach((track) => {
       const value = gridRef.current[track.id][step] || 0;
       if (value <= 0) return;
@@ -135,9 +123,9 @@ export function DrumMachinePage() {
 
       playDrumHit(track.id, velocity);
     });
-  }
+  }, []);
 
-  function scheduleNextStep() {
+  const scheduleNextStep = useCallback(() => {
     if (!runningRef.current) return;
 
     const step = stepCursorRef.current;
@@ -149,20 +137,59 @@ export function DrumMachinePage() {
     const swingFactor = Math.max(0, Math.min(0.45, (swingRef.current / 100) * 0.5));
     const duration = base * (step % 2 === 0 ? 1 - swingFactor : 1 + swingFactor);
     loopHandleRef.current = window.setTimeout(scheduleNextStep, Math.max(10, duration));
-  }
+  }, [playStep]);
 
-  function startLoop() {
+  const startLoop = useCallback(() => {
     if (runningRef.current) return;
     stepCursorRef.current = 0;
     runningRef.current = true;
     setRunning(true);
     scheduleNextStep();
-  }
+  }, [scheduleNextStep]);
 
-  function toggleLoop() {
+  const toggleLoop = useCallback(() => {
     if (runningRef.current) stopLoop();
     else startLoop();
-  }
+  }, [startLoop, stopLoop]);
+
+  const playCurrent = useCallback(() => {
+    toggleLoop();
+  }, [toggleLoop]);
+
+  const clearPattern = useCallback(() => {
+    stopLoop();
+    setGrid(createEmptyDrumGrid(stepsRef.current));
+  }, [stopLoop]);
+
+  useEffect(() => {
+    if (!filteredPatterns.some((pattern) => pattern.id === selectedPatternId)) {
+      const nextPattern = filteredPatterns[0];
+      stopLoop();
+      setSelectedPatternId(nextPattern.id);
+      setGrid(cloneDrumGrid(nextPattern.grid));
+      setSteps(nextPattern.steps);
+      setTimeSignature(nextPattern.steps === 16 ? "4/4" : timeSignature);
+    }
+  }, [filteredPatterns, selectedPatternId, stopLoop, timeSignature]);
+
+  useEffect(() => {
+    updateRoute("drums", {
+      title: "Drum Machine",
+      subtitle: "260 labeled patterns categorized by style with editable 16-step sequencing and loop playback.",
+      playableLabel,
+      playableNoteSet: [],
+      playCurrent,
+      clear: clearPattern,
+    });
+  }, [clearPattern, playCurrent, playableLabel, updateRoute]);
+
+  useEffect(
+    () => () => {
+      if (loopHandleRef.current) window.clearTimeout(loopHandleRef.current);
+      stopAllAudio();
+    },
+    [],
+  );
 
   function loadPattern(patternId: string) {
     const pattern = DRUM_PATTERN_LIBRARY.find((entry) => entry.id === patternId);
@@ -194,10 +221,6 @@ export function DrumMachinePage() {
     });
   }
 
-  function clearPattern() {
-    setGrid(createEmptyDrumGrid(steps));
-  }
-
   function randomizePattern() {
     setGrid(randomizeDrumPattern(steps));
   }
@@ -213,64 +236,29 @@ export function DrumMachinePage() {
 
   return (
     <section className="page-section">
-      <div className="page-hero">
-        <div>
-          <span className="eyebrow">Source Feature</span>
-          <h1>Drum Machine</h1>
-          <p>
-            The sequencer is now source-side. Genre patterns, step editing, swing, humanize, and
-            MIDI export all run without booting the legacy runtime.
-          </p>
-        </div>
-        <div className="hero-actions">
-          <button className="primary-button" onClick={toggleLoop}>
-            {running ? "Stop" : "Play"}
-          </button>
-          <button className="ghost-button" onClick={exportMidi}>
-            Export MIDI
-          </button>
-        </div>
-      </div>
-
-      <div className="summary-grid">
-        <article className="summary-card">
-          <span className="summary-label">Pattern</span>
-          <h2>{selectedPattern.name}</h2>
-          <p>
-            {selectedPattern.id} • {selectedPattern.category} / {selectedPattern.subcategory}
-          </p>
-          <div className="info-chip-row">
-            <span className="info-chip">{timeSignature}</span>
-            <span className="info-chip">{steps} steps</span>
-            <span className="info-chip">{tempo} BPM</span>
-          </div>
-        </article>
-
-        <article className="summary-card">
-          <span className="summary-label">Playback</span>
-          <h2>{running ? "Running" : "Stopped"}</h2>
-          <div className="info-chip-row">
-            <span className="info-chip">Swing {swing}%</span>
-            <span className="info-chip">{humanizeEnabled ? "Humanize On" : "Humanize Off"}</span>
-            <span className="info-chip">Export {loopBars} bars</span>
-          </div>
-        </article>
-
-        <article className="summary-card">
-          <span className="summary-label">Library</span>
-          <h2>{filteredPatterns.length} patterns</h2>
-          <p>Filter by category or search by id/style, then load a preset into the editable grid below.</p>
-        </article>
-      </div>
-
-      <article className="detail-card">
-        <div className="detail-header">
+      <article className="legacy-tool-panel">
+        <div className="legacy-tool-panel__header">
           <div>
-            <span className="summary-label">Pattern Browser</span>
-            <h2>Load and shape a groove</h2>
+            <span className="eyebrow">Rhythm Sequencer</span>
+            <h1 className="legacy-tool-panel__title">Drum Machine</h1>
+            <p className="legacy-tool-panel__copy">
+              Pattern browser on top, transport row under it, then the editable grid. This puts the
+              drum page back into the older single-surface sequencer layout.
+            </p>
+          </div>
+          <div className="legacy-toolbar-row">
+            <span className="legacy-toolbar-chip">
+              Pattern <strong>{selectedPattern.id}</strong>
+            </span>
+            <span className="legacy-toolbar-chip">
+              Meter <strong>{timeSignature}</strong>
+            </span>
+            <span className="legacy-toolbar-chip">
+              Tempo <strong>{tempo} BPM</strong>
+            </span>
           </div>
         </div>
-        <div className="metronome-config-grid">
+        <div className="metronome-config-grid legacy-form-grid">
           <label className="select-field">
             <span>Category</span>
             <select value={category} onChange={(event) => setCategory(event.target.value)}>
@@ -303,52 +291,10 @@ export function DrumMachinePage() {
             </select>
           </label>
         </div>
-      </article>
-
-      <article className="detail-card">
-        <div className="detail-header">
-          <div>
-            <span className="summary-label">Transport</span>
-            <h2>Meter, swing, and variation</h2>
-          </div>
-        </div>
-        <div className="metronome-config-grid">
-          <label className="select-field">
-            <span>Meter</span>
-            <select value={timeSignature} onChange={(event) => updateSignature(event.target.value)}>
-              {["2/4", "3/4", "4/4", "5/4", "6/4", "7/4", "3/8", "5/8", "6/8", "7/8", "9/8", "11/8", "12/8", "13/8", "15/8"].map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="range-field">
-            <span>Swing</span>
-            <input
-              type="range"
-              min="0"
-              max="70"
-              value={swing}
-              onChange={(event) => setSwing(Number.parseInt(event.target.value, 10))}
-            />
-            <strong>{swing}%</strong>
-          </label>
-
-          <label className="range-field">
-            <span>Export Bars</span>
-            <input
-              type="range"
-              min="1"
-              max="16"
-              value={loopBars}
-              onChange={(event) => setLoopBars(Number.parseInt(event.target.value, 10))}
-            />
-            <strong>{loopBars}</strong>
-          </label>
-        </div>
-        <div className="hero-actions">
+        <div className="legacy-toolbar-row">
+          <button className="primary-button" onClick={toggleLoop}>
+            {running ? "Stop" : "Play"}
+          </button>
           <button
             className={humanizeEnabled ? "secondary-button" : "ghost-button"}
             onClick={() => setHumanizeEnabled((current) => !current)}
@@ -364,15 +310,94 @@ export function DrumMachinePage() {
           <button className="ghost-button" onClick={clearPattern}>
             Clear
           </button>
+          <button className="ghost-button" onClick={exportMidi}>
+            Export MIDI
+          </button>
         </div>
       </article>
 
-      <article className="detail-card">
-        <div className="detail-header">
+      <div className="legacy-lab-grid">
+        <article className="legacy-preview-panel">
+          <div className="legacy-tool-panel__header">
+            <div>
+              <span className="summary-label">Selected Pattern</span>
+              <h2>{selectedPattern.name}</h2>
+              <p>
+                {selectedPattern.id} • {selectedPattern.category} / {selectedPattern.subcategory}
+              </p>
+            </div>
+          </div>
+          <div className="legacy-preview-panel__meta">
+            <span className="legacy-preview-chip">{timeSignature}</span>
+            <span className="legacy-preview-chip">{steps} steps</span>
+            <span className="legacy-preview-chip">Swing {swing}%</span>
+            <span className="legacy-preview-chip">{running ? "Running" : "Stopped"}</span>
+            <span className="legacy-preview-chip">Export {loopBars} bars</span>
+          </div>
+          <p className="legacy-catalog-card__subtitle">{selectedPatternSummary}</p>
+        </article>
+
+        <div className="legacy-selection-strip">
+          <article className="legacy-selection-card">
+            <span className="summary-label">Transport</span>
+            <div className="metronome-config-grid legacy-form-grid">
+              <label className="select-field">
+                <span>Meter</span>
+                <select value={timeSignature} onChange={(event) => updateSignature(event.target.value)}>
+                  {["2/4", "3/4", "4/4", "5/4", "6/4", "7/4", "3/8", "5/8", "6/8", "7/8", "9/8", "11/8", "12/8", "13/8", "15/8"].map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="legacy-slider-card">
+                <span>Swing</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="70"
+                  value={swing}
+                  onChange={(event) => setSwing(Number.parseInt(event.target.value, 10))}
+                />
+                <strong>{swing}%</strong>
+              </label>
+
+              <label className="legacy-slider-card">
+                <span>Export Bars</span>
+                <input
+                  type="range"
+                  min="1"
+                  max="16"
+                  value={loopBars}
+                  onChange={(event) => setLoopBars(Number.parseInt(event.target.value, 10))}
+                />
+                <strong>{loopBars}</strong>
+              </label>
+            </div>
+          </article>
+
+          <article className="legacy-selection-card">
+            <span className="summary-label">Library</span>
+            <h2>{filteredPatterns.length} patterns</h2>
+            <div className="legacy-preview-panel__meta">
+              <span className="legacy-preview-chip">{filteredPatterns.length} patterns</span>
+              <span className="legacy-preview-chip">{humanizeEnabled ? "Humanize On" : "Humanize Off"}</span>
+            </div>
+            <p className="legacy-catalog-card__subtitle">
+              Filter by category or search by id and style, then load a preset into the grid below.
+            </p>
+          </article>
+        </div>
+      </div>
+
+      <article className="legacy-tool-panel">
+        <div className="legacy-tool-panel__header">
           <div>
             <span className="summary-label">Step Grid</span>
-            <h2>Editable sequencer</h2>
-            <p>Track labels audition the sound. Step buttons cycle through velocity levels.</p>
+            <h2>Editable Sequencer</h2>
+            <p>Track labels audition each sound. Step buttons cycle through velocity levels.</p>
           </div>
         </div>
         <div className="drum-grid-shell">
