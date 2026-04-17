@@ -29,6 +29,24 @@ npm run preview
 
 The legacy assets are re-extracted automatically before `dev` and `build`.
 
+## Cloudflare Pages
+
+This repo is ready to deploy as a static SPA on Cloudflare Pages.
+
+Use these settings:
+
+- Build command: `npm run build`
+- Build output directory: `dist`
+- Node version: current LTS is fine
+
+The SPA fallback is handled by `public/_redirects`, which is copied into `dist/` during the Vite build:
+
+```txt
+/* /index.html 200
+```
+
+That allows deep links like `/app/chords` and `/app/world` to resolve correctly on Cloudflare Pages while still using `BrowserRouter`.
+
 ## Smoke test
 
 After starting `npm run preview` or `npm run dev`, run:
