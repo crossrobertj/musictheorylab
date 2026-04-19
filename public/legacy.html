@@ -539,6 +539,9 @@
             });
     })();
     </script>
+<script>
+window.__legacyInitialHash = window.location.hash;
+</script>
 </head>
 <body class="bg-zinc-950 text-zinc-200 min-h-screen">
     <div id="app-shell" class="flex h-screen">
@@ -1273,7 +1276,6 @@
             // Convert existing scroll listener on main-scroll to passive
             const mainScroll = document.getElementById('main-scroll');
             if (mainScroll) {
-                mainScroll.removeEventListener('scroll', arguments.callee);
                 mainScroll.addEventListener('scroll', rafThrottle(() => {
                     // Any scroll-based behavior goes here
                 }), { passive: true });
@@ -38696,8 +38698,7 @@ Click notes on the instrument above to add to tablature
 
             // If online, periodically check for newer version
             if (navigator.onLine) {
-                checkOnlineVersion(currentHash);
-            }
+                }
         }
 
         function checkOnlineVersion(currentHash) {
@@ -39182,5 +39183,30 @@ Click notes on the instrument above to add to tablature
 
     </script>
 
+<script>
+function applyInitialLegacyRoute() {
+  try {
+    var rawHash = window.__legacyInitialHash || window.location.hash || "";
+    var params = new URLSearchParams(rawHash.replace(/^#/, ""));
+    var initialView = params.get("view");
+    var initialKey = params.get("key");
+    if (initialKey && typeof window.changeKey === "function") {
+      window.changeKey(initialKey);
+    }
+    if (initialView && typeof window.switchView === "function") {
+      window.switchView(initialView);
+    }
+  } catch (error) {
+    console.warn("[Legacy Boot] Could not apply initial route", error);
+  }
+}
+
+document.addEventListener("DOMContentLoaded", function () {
+  applyInitialLegacyRoute();
+  window.setTimeout(applyInitialLegacyRoute, 0);
+  window.setTimeout(applyInitialLegacyRoute, 150);
+  window.addEventListener("load", applyInitialLegacyRoute, { once: true });
+});
+</script>
 </body>
 </html>
