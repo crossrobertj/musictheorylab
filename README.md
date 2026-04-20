@@ -29,15 +29,37 @@ npm run preview
 
 The legacy assets are re-extracted automatically before `dev` and `build`.
 
-## Cloudflare Pages
+## Cloudflare Workers Builds
 
-This repo is ready to deploy as a static SPA on Cloudflare Pages.
+This repo can also deploy through Cloudflare Workers Builds as an assets-only Worker.
 
-Use these settings:
+Included repo config:
+
+- [wrangler.jsonc](/Users/manuelruiz/musictheorylab/wrangler.jsonc)
+  - worker name: `musictheorylab`
+  - static asset directory: `dist`
+  - SPA fallback: `single-page-application`
+- [.node-version](/Users/manuelruiz/musictheorylab/.node-version)
+  - pins Node to `22.16.0`
+
+Use these settings in the Cloudflare dashboard:
 
 - Build command: `npm run build`
-- Build output directory: `dist`
-- Node version: current LTS is fine
+- Deploy command: `npx wrangler deploy`
+- Non-production branch deploy command: `npx wrangler versions upload`
+- Path: leave blank so Builds runs from the repository root
+
+If you prefer local commands, use:
+
+```bash
+npm run cf:deploy
+```
+
+For a local Workers preview of the built output, use:
+
+```bash
+npm run cf:preview
+```
 
 The SPA fallback is handled by `public/_redirects`, which is copied into `dist/` during the Vite build:
 
