@@ -9,6 +9,8 @@
     "dev": "vite",
     "prebuild": "npm run extract-legacy",
     "build": "tsc -b && vite build",
+    "cf:deploy": "npm run build && wrangler deploy",
+    "cf:preview": "npm run build && wrangler dev",
     "preview": "vite preview",
     "smoke": "node scripts/smoke.mjs",
     "test": "vitest",
@@ -32,6 +34,7 @@
     "puppeteer-core": "^24.41.0",
     "typescript": "^5.9.2",
     "vite": "^6.0.0",
-    "vitest": "^4.1.4"
+    "vitest": "^4.1.4",
+    "wrangler": "^4.84.0"
   }
 }
